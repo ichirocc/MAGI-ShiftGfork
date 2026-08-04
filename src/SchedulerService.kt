@@ -1,11 +1,13 @@
 package com.magi.app.v6.engine
 
+
 import com.magi.app.v6.MirrorLog
 import com.magi.app.v6.Problem
 import com.magi.app.v6.ViolationReport
 
 import com.magi.app.v6.engine.parallel.ParallelSaCoordinator
 import java.util.Random
+import com.magi.app.v6.engine.OptimizeBenchLog
 
 data class ScheduleProfile(
     val totalBudgetMs: Long = 300_000L,
@@ -45,12 +47,23 @@ class SchedulerService(
         var session = SearchSessionFull(problem, initial, evaluate, better, deltaHook = deltaHook)
         val g4 = G4Diversify(better)
         fun emit(phase: String, iters: Long = 0L, withSchedule: Boolean = true) {
+            val elapsed = System.currentTimeMillis() - started
+            OptimizeBenchLog.phase(
+                engine = OptimizeBenchLog.ENGINE_REBUILD,
+                phase = phase,
+                report = session.bestReport,
+                elapsedMs = elapsed,
+                iters = iters,
+                seed = baseSeed,
+                workers = workers,
+                budgetMs = profile.totalBudgetMs,
+            )
             progressListener?.onProgress(
                 SearchProgress(
                     phase = phase,
                     report = session.bestReport,
                     iters = iters,
-                    elapsedMs = System.currentTimeMillis() - started,
+                    elapsedMs = elapsed,
                     schedule = if (withSchedule) SearchSessionFull.deepCopy(session.best) else null,
                 ),
             )
