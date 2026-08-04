@@ -49,6 +49,7 @@ object OptimizeBenchLog {
             append(" iters=").append(iters)
             append(" seed=").append(seed)
             append(" workers=").append(workers)
+            append(" version=").append(AppVersion.info.compact())
             if (budgetMs > 0L) append(" budgetMs=").append(budgetMs)
             if (note.isNotEmpty()) append(" note=").append(note.replace(' ', '_'))
         }
@@ -71,6 +72,7 @@ object OptimizeBenchLog {
     ) {
         fun line(): String = buildString {
             append("MAGI_BENCH_SUMMARY")
+            append(" version=").append(AppVersion.info.compact())
             append(" engine=").append(engine)
             append(" hard=").append(hard)
             append(" soft=").append(soft)
@@ -79,6 +81,7 @@ object OptimizeBenchLog {
             append(" elapsedMs=").append(elapsedMs)
             append(" seed=").append(seed)
             append(" workers=").append(workers)
+            append(" version=").append(AppVersion.info.compact())
             append(" budgetMs=").append(budgetMs)
             append(" phases=").append(phases.size)
         }
