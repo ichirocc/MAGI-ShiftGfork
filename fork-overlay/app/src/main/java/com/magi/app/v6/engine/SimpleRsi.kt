@@ -12,7 +12,7 @@ import java.util.Random
 class SimpleRsi(
     private val problem: Problem,
     private val session: SearchSessionFull,
-    private val fixProvider: FocusFixProvider = FocusAwareFixProvider(),
+    private val fixProvider: FocusFixProvider = FocusAwareFixProvider(problem),
 ) {
     data class Params(
         val budgetMs: Long,
