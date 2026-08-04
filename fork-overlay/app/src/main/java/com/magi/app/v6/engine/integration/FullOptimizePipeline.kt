@@ -15,6 +15,7 @@ import com.magi.app.v6.engine.EngineWiring
 import com.magi.app.v6.engine.ObjectiveWeightsSource
 import com.magi.app.v6.engine.SearchProgress
 import com.magi.app.v6.engine.SearchProgressListener
+import com.magi.app.v6.engine.OptimizeBenchLog
 import com.magi.app.v6.engine.adapters.ScheduleImprover
 import com.magi.app.v6.engine.c1.C1JointLnsEngine
 import com.magi.app.v6.engine.nativex.NativeBridgeProbe
@@ -59,6 +60,14 @@ object FullOptimizePipeline {
     ): ScheduleRunResult {
         ObjectiveWeightsSource.install(MirrorKeys.hard, MirrorKeys.weights)
 
+        val wall0 = System.currentTimeMillis()
+        OptimizeBenchLog.beginRun(
+            engine = OptimizeBenchLog.ENGINE_REBUILD,
+            seed = options.seed,
+            workers = options.workers,
+            budgetMs = options.budgetMs,
+        )
+
         val schedule0 = ensureInitial(state, scheduleIn, options.generateInitialIfNeeded)
         val problem = Problem(state)
         val evaluate: (Array<IntArray>) -> ViolationReport = { sch ->
@@ -89,8 +98,18 @@ object FullOptimizePipeline {
         val listener = onProgress?.let { cb -> SearchProgressListener { p -> cb(p) } }
 
         try {
+            val startReport = evaluate(schedule0)
+            OptimizeBenchLog.phase(
+                engine = OptimizeBenchLog.ENGINE_REBUILD,
+                phase = "start",
+                report = startReport,
+                elapsedMs = System.currentTimeMillis() - wall0,
+                seed = options.seed,
+                workers = options.workers,
+                budgetMs = options.budgetMs,
+            )
             onProgress?.invoke(
-                SearchProgress("start", evaluate(schedule0), 0L, 0L, schedule0),
+                SearchProgress("start", startReport, 0L, System.currentTimeMillis() - wall0, schedule0),
             )
 
             val bridge = EngineWiring.forMain(
@@ -114,6 +133,15 @@ object FullOptimizePipeline {
                 postReserveMs = options.postReserveMs,
                 seed = baseSeed,
                 shouldStop = shouldStop,
+            )
+            OptimizeBenchLog.phase(
+                engine = OptimizeBenchLog.ENGINE_REBUILD,
+                phase = "pipeline",
+                report = art.report,
+                elapsedMs = System.currentTimeMillis() - wall0,
+                seed = baseSeed,
+                workers = options.workers,
+                budgetMs = options.budgetMs,
             )
 
             if (!shouldStop() && art.report.hard > 0 && options.hardResidualMs > 0L) {
@@ -146,10 +174,39 @@ object FullOptimizePipeline {
             }
 
             val finalReport = evaluate(art.schedule)
-            onProgress?.invoke(
-                SearchProgress("done", finalReport, 0L, 0L, art.schedule),
+            val elapsed = System.currentTimeMillis() - wall0
+            OptimizeBenchLog.phase(
+                engine = OptimizeBenchLog.ENGINE_REBUILD,
+                phase = "done",
+                report = finalReport,
+                elapsedMs = elapsed,
+                seed = baseSeed,
+                workers = options.workers,
+                budgetMs = options.budgetMs,
             )
-            return ScheduleRunResult(schedule = art.schedule, report = finalReport)
+            OptimizeBenchLog.summary(
+                OptimizeBenchLog.Summary(
+                    engine = OptimizeBenchLog.ENGINE_REBUILD,
+                    hard = finalReport.hard,
+                    soft = finalReport.soft,
+                    total = finalReport.total,
+                    weighted = finalReport.weightedScore,
+                    elapsedMs = elapsed,
+                    seed = baseSeed,
+                    workers = options.workers,
+                    budgetMs = options.budgetMs,
+                    phases = OptimizeBenchLog.snapshot().filter { it.engine == OptimizeBenchLog.ENGINE_REBUILD },
+                ),
+            )
+            onProgress?.invoke(
+                SearchProgress("done", finalReport, 0L, elapsed, art.schedule),
+            )
+            return ScheduleRunResult(
+                schedule = art.schedule,
+                report = finalReport.copy(
+                    logs = finalReport.logs + OptimizeBenchLog.drainMirrorLogs(),
+                ),
+            )
         } finally {
             if (handle != 0L) runCatching { NativeBridge.nativeDestroyProblem(handle) }
         }
