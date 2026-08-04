@@ -1,0 +1,97 @@
+name: V6 Engine Check
+
+on:
+  workflow_dispatch:
+  push:
+    # 作業ブランチ全般で走らせる。旧設定は特定のブランチ名（claude/code-review-0gu5p3）を
+    # ハードコードしており、それ以外の作業ブランチへ push してもテストが1回も回らなかった
+    # （PR を開くまで検証されない＝コミットを積んでから初めて失敗が分かる）。
+    # concurrency で同一 ref の先行実行はキャンセルされるので、連続 push でも実行数は増えない。
+    branches:
+      # [3.320.0] main を追加。旧設定は作業ブランチしか含まず、main へ直接 push した場合は
+      #   native-parity だけが走って Kotlin unit test と assembleDebug が実行されなかった
+      #   （通常は PR 経由なので pull_request トリガーで走るが、直 push には穴があった）。
+      - main
+      - 'claude/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v6-engine-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  v6-engine-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Install Gradle 9.3.1
+        shell: bash
+        run: |
+          wget -q -O /tmp/gradle.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          mkdir -p "$HOME/gradle-dist"
+          unzip -q /tmp/gradle.zip -d "$HOME/gradle-dist"
+          echo "$HOME/gradle-dist/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+
+      - name: Run unit tests (engine + v6)
+        shell: bash
+        run: |
+          mkdir -p build/ci-logs
+          set -o pipefail
+          gradle testDebugUnitTest --stacktrace 2>&1 | tee build/ci-logs/testDebugUnitTest.log
+
+      - name: Assemble debug APK
+        shell: bash
+        run: |
+          mkdir -p build/ci-logs
+          set -o pipefail
+          gradle assembleDebug --stacktrace 2>&1 | tee build/ci-logs/assembleDebug.log
+
+      - name: Verify native .so in debug APK
+        shell: bash
+        run: |
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          echo "APK=$APK"
+          unzip -l "$APK" | tee build/ci-logs/apk-contents.txt | grep -E 'lib/.*/libmagi_native.so' || {
+            echo "::warning::libmagi_native.so missing from APK"
+            exit 1
+          }
+          echo "native .so present"
+
+      # アーティファクト保存はベストエフォート。成功時は何もアップロードせず（ストレージ枠の
+      # 浪費を防ぐ）、失敗時だけ短期保持でログを残す。ビルド用 APK はここでは保存しない
+      # （必要なときは release-build.yml / android-sdk.yml で取得する）。
+      - name: Upload CI logs (on failure only)
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: v6-engine-ci-logs
+          path: build/ci-logs
+          if-no-files-found: ignore
+          retention-days: 7
+
