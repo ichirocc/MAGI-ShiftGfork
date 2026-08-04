@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(magi_native LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+add_library(magi_native SHARED src/magi_native.cpp)
+target_include_directories(magi_native PUBLIC include)
+add_executable(magi_native_test test/test_main.cpp)
+target_link_libraries(magi_native_test PRIVATE magi_native)
+target_include_directories(magi_native_test PRIVATE include)

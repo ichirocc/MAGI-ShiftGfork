@@ -1,0 +1,19 @@
+// magi_native_api.hpp — 契約スケッチ（実装は NDK 側）
+// 禁止: schedule[i][j] = x の直接 API、wish lock 無視の strongPerturb
+#pragma once
+#include <cstdint>
+extern "C" {
+  int64_t magi_create_problem(const uint8_t* flat, int32_t n);
+  void    magi_destroy_problem(int64_t h);
+  // mode: 0 STRICT 1 ANNEAL 2 LAHC
+  // return: 0 reject 1 accept_current 2 accept_best_hint
+  int32_t magi_try_writes(int64_t h, int64_t base_ver,
+                          const int32_t* writes, int32_t n_writes,
+                          int32_t mode, double temp, int64_t lahc_thr);
+  int64_t magi_packed_score(int64_t h);
+}
+// 実装必須不変条件:
+// - writes は (staff,day,shift)* 正規化済み。重複セル禁止。
+// - wish-lock セルの変更は常に reject。
+// - STRICT は目的改善時のみ commit。
+// - ANNEAL は Metropolis。best 更新ヒントは 2 を返すが、Kotlin が betterReport で再検証。

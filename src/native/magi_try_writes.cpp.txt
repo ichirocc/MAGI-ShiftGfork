@@ -1,0 +1,89 @@
+// magi_try_writes.cpp — 実装テンプレート（NDK で libmagi_native.so にビルド）
+// 契約: Kotlin NativeMoveContract / JniNativeMoveEngine と一致
+
+#include "magi_native_api.hpp"
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <unordered_set>
+#include <vector>
+
+struct ProblemState {
+  int S=0, T=0, K=0;
+  std::vector<int> schedule;      // S*T
+  std::vector<uint8_t> wish_lock; // S*T
+  std::vector<uint8_t> can_do;    // S*K
+  int64_t version = 0;
+  int64_t best_score = 0;
+  std::vector<int> best_schedule;
+};
+
+static int64_t pack_score_stub(ProblemState* p) {
+  // 本番は full/delta eval。ここはプレースホルダ。
+  return p->best_score;
+}
+
+extern "C" int32_t magi_try_writes(
+    int64_t h, int64_t base_ver,
+    const int32_t* writes, int32_t n_writes,
+    int32_t mode, double temp, int64_t /*lahc_thr*/) {
+  auto* p = reinterpret_cast<ProblemState*>(h);
+  if (!p || n_writes <= 0 || n_writes % 3 != 0) return 0;
+  if (base_ver != p->version) return 0;
+
+  // 1) validate range / duplicate / wish / canDo
+  std::unordered_set<int64_t> seen;
+  std::vector<std::tuple<int,int,int,int>> changes; // s,d,old,new
+  for (int i = 0; i < n_writes; i += 3) {
+    int s = writes[i], d = writes[i+1], sh = writes[i+2];
+    if (s < 0 || s >= p->S || d < 0 || d >= p->T || sh < 0 || sh >= p->K) return 0;
+    int64_t key = (int64_t(s) << 32) | uint32_t(d);
+    if (!seen.insert(key).second) return 0;
+    int old = p->schedule[s * p->T + d];
+    if (old == sh) continue;
+    if (p->wish_lock[s * p->T + d]) return 0;
+    if (!p->can_do[s * p->K + sh]) return 0;
+    changes.emplace_back(s, d, old, sh);
+  }
+  if (changes.empty()) return 0;
+
+  // 2) apply
+  for (auto [s,d,old,sh] : changes) p->schedule[s * p->T + d] = sh;
+
+  // 3) score (stub: always accept improve path in STRICT only if score decreases — real eval needed)
+  int64_t before = p->best_score;
+  int64_t after = pack_score_stub(p); // TODO: real delta eval
+
+  auto revert = [&]{
+    for (auto [s,d,old,sh] : changes) p->schedule[s * p->T + d] = old;
+  };
+
+  if (mode == 0) { // STRICT
+    if (after >= before) { revert(); return 0; }
+    p->version++;
+    if (after < p->best_score) {
+      p->best_score = after;
+      p->best_schedule = p->schedule;
+      return 2;
+    }
+    return 1;
+  }
+  if (mode == 1) { // ANNEAL Metropolis
+    if (after > before) {
+      double delta = double(after - before);
+      double prob = std::exp(-delta / std::max(temp, 1e-12));
+      // RNG must be passed from Kotlin for reproducibility — template uses accept-if-improve only
+      if (after >= before) { /* placeholder */ }
+    }
+    p->version++;
+    if (after < p->best_score) {
+      p->best_score = after;
+      p->best_schedule = p->schedule;
+      return 2;
+    }
+    return 1;
+  }
+  // LAHC: threshold compare omitted in template
+  p->version++;
+  return 1;
+}
