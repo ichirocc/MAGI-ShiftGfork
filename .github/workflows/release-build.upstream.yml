@@ -1,0 +1,80 @@
+name: Release Build
+
+# リリース用 APK を生成するワークフロー。
+# - v* タグを打つと自動でリリース APK をビルドし、成果物としてアップロードする。
+# - 手動実行（workflow_dispatch）では upload_apk=true のときだけアップロードする
+#   （android-sdk.yml と同じく、ストレージ枠超過の注記を避けるためゲートする）。
+# 注意: ここでは署名設定を持たないためデバッグ鍵で署名された動作確認用 APK になる。
+#       ストア配布する場合は別途リリース signingConfig を追加すること。
+on:
+  workflow_dispatch:
+    inputs:
+      upload_apk:
+        description: "Upload built release APK as an artifact (may hit storage quota)"
+        type: boolean
+        default: true
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Install Gradle 9.3.1
+        shell: bash
+        run: |
+          wget -q -O /tmp/gradle.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          mkdir -p "$HOME/gradle-dist"
+          unzip -q /tmp/gradle.zip -d "$HOME/gradle-dist"
+          echo "$HOME/gradle-dist/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+
+      - name: Build release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/build.log || {
+            { echo "[CI診断r4] Build失敗ログ抜粋:"; echo '```'; grep -nE "^e: |error:|FAILURE:|What went wrong|Caused by" /tmp/build.log | head -60; echo '--- tail40 ---'; tail -n 40 /tmp/build.log; echo '```'; } > /tmp/errbody.txt
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@/tmp/errbody.txt || true
+            exit 1
+          }
+
+      # アップロードはベストエフォート（枠超過などで赤くしない）。
+      # タグビルドでは常に、手動実行では upload_apk=true のときのみアップロードする。
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        if: ${{ always() && (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.upload_apk == 'true') && hashFiles('**/build/outputs/apk/release/**/*.apk') != '' }}
+        with:
+          name: app-release-${{ github.sha }}
+          path: "**/build/outputs/apk/release/**/*.apk"
+          retention-days: 14
