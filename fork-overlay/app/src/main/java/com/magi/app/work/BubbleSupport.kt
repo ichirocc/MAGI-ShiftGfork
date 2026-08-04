@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.core.app.LocusIdCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
@@ -99,8 +98,7 @@ object BubbleSupport {
             .setPerson(person(ctx))
             .setCategories(setOf(CATEGORY_OPTIMIZE))
             .setIntent(open)
-            .setLocusId(LocusIdCompat(SHORTCUT_ID))
-            .build()
+                        .build()
         runCatching { ShortcutManagerCompat.pushDynamicShortcut(ctx, info) }
     }
 
@@ -150,8 +148,7 @@ object BubbleSupport {
             .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setShortcutId(SHORTCUT_ID)
-            .setLocusId(LocusIdCompat(SHORTCUT_ID))
-            .addPerson(person(ctx))
+                        .addPerson(person(ctx))
             .setContentIntent(bubbleIntent(ctx))
             .setBubbleMetadata(bubbleMetadata(ctx, autoExpand, suppressNotification))
             .setOngoing(ongoing)
