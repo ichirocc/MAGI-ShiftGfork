@@ -566,7 +566,7 @@ class ConstraintPolishEngine(
     }
 
     private fun genApt(session: SearchSessionFull, focus: Residual): Move? {
-        val skill = problem.skillMatrix()
+        val skill = problem.skillMatrix
         val cells = if (focus.cells.isNotEmpty()) focus.cells else aptCells(session.current)
         for (pack in cells) {
             val s = pack ushr 16
@@ -782,7 +782,7 @@ class ConstraintPolishEngine(
     }
 
     private fun aptCells(sch: Array<IntArray>): IntArray {
-        val skill = problem.skillMatrix()
+        val skill = problem.skillMatrix
         val cells = ArrayList<Int>()
         for (s in 0 until S) for (d in 0 until T) {
             val sh = sch[s][d]
