@@ -78,7 +78,7 @@ class SchedulerService(
         // G1: workers==1 → 単一 Session（再現性）。workers>=2 → 独立並列 SA → best を本 session に吸収
         if (workers <= 1) {
             G1LocalAnnealer(problem, session, packedScore).run(
-                G1Params(budgetMs = g1Ms, shouldStop = { stopSearch() }, nativeProbe = nativeProbe, maxIters = fixedItersG1),
+                G1Params(budgetMs = g1Ms, shouldStop = { stopSearch() }, nativeProbe = nativeProbe),
                 rng,
             )
         } else {
@@ -123,14 +123,6 @@ class SchedulerService(
             }
         }
 
-
-        if (skipPostProcess) {
-            emit("done")
-            return session.snapshotBest(
-                alternatives = emptyList(),
-                stopReason = if (shouldStop()) StopReason.CANCELLED else StopReason.FIXED_POINT,
-            )
-        }
 
         val (sessionAfter, stopG3) = G3FamilyPolish(g3Backend, problem, rng).run(
             session,
