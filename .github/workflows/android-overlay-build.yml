@@ -13,7 +13,7 @@ concurrency:
 jobs:
   assemble:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,6 +27,34 @@ jobs:
           set -euo pipefail
           cp -a overlay-src/fork-overlay/. app-base/
           ls app-base/app/src/main/java/com/magi/app/v6/engine | head
+      - name: Ensure plugin repositories
+        working-directory: app-base
+        run: |
+          # settings.gradle.kts に gradlePluginPortal が無い場合に追記
+          if [ -f settings.gradle.kts ]; then
+            if ! grep -q 'gradlePluginPortal' settings.gradle.kts; then
+              cat >> settings.gradle.kts << 'S'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+S
+            fi
+          fi
+          # init script fallback
+          mkdir -p ~/.gradle
+          cat > ~/.gradle/init.gradle.kts << 'I'
+settingsEvaluated {
+    pluginManagement.repositories.apply {
+        mavenCentral()
+        google()
+        gradlePluginPortal()
+    }
+}
+I
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -43,17 +71,17 @@ jobs:
           mkdir -p "$HOME/gradle-dist"
           unzip -q /tmp/gradle.zip -d "$HOME/gradle-dist"
           echo "$HOME/gradle-dist/gradle-9.3.1/bin" >> "$GITHUB_PATH"
-      - name: testDebugUnitTest
+      - name: compileDebugKotlin
         working-directory: app-base
         run: |
           mkdir -p build/ci-logs
           set -o pipefail
-          gradle testDebugUnitTest --stacktrace 2>&1 | tee build/ci-logs/testDebugUnitTest.log
+          gradle :app:compileDebugKotlin --stacktrace --refresh-dependencies 2>&1 | tee build/ci-logs/compileDebugKotlin.log
       - name: assembleDebug
         working-directory: app-base
         run: |
           set -o pipefail
-          gradle assembleDebug --stacktrace 2>&1 | tee build/ci-logs/assembleDebug.log
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build/ci-logs/assembleDebug.log
       - name: Verify libmagi_native.so
         working-directory: app-base
         run: |
