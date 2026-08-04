@@ -54,6 +54,10 @@ class Problem(
         return (0 until K).filter { canDoMask[staff][it] }
     }
 
+    /** [staff][shift] 担当可否行列（プロパティ。関数呼び出し skillMatrix() は使わない） */
+    val skillMatrix: Array<BooleanArray>
+        get() = Array(S) { s -> BooleanArray(K) { k -> canDo(s, k) } }
+
     fun setExactCount(staff: Int, shift: Int, count: Int) {
         require(staff in 0 until S && shift in 0 until K)
         rangeLo[staff][shift] = count
