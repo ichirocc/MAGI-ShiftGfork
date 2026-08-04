@@ -353,14 +353,12 @@ struct SaChunk {
         a.assign(cur, cur + (size_t)S * T);
         ssn.assign((size_t)S * K, 0);
         dsn.assign((size_t)T * K, 0);
-        wd.assign((size_t)S * 7, 0);
-        if (useBits) { rowMask.assign((size_t)S * K, 0ULL); dayShiftMask.assign((size_t)T * K, 0ULL); }
+        wd.assign((size_t)S * K * 7, 0);
         for (int i = 0; i < S; i++) {
+            const int* row = &a[(size_t)i * T];
             for (int j = 0; j < T; j++) {
-                int k = a[(size_t)i * T + j];
-                if (k >= 0 && k < K) { ssn[(size_t)i * K + k]++; dsn[(size_t)j * K + k]++;
-                    if (useBits) { rowMask[(size_t)i * K + k] |= (1ULL << j); dayShiftMask[(size_t)j * K + k] |= (1ULL << i); } }
-                if (k != p.restIdx && k >= 0 && k < K) wd[(size_t)i * 7 + (p.dow0 + j) % 7]++;
+                int k = row[j];
+                if (k >= 0 && k < K) wd[((size_t)i * K + k) * 7 + (p.dow0 + j) % 7]++;
             }
         }
         score = fullEvalCombined(p, a.data());
@@ -484,7 +482,12 @@ struct SaChunk {
         for (int x : mem) v += std::llabs((long long)ssn[(size_t)x * K + k] - tgt);
         return v;
     }
-    long long contribWeekly(int i) const { return weeklyDevOfBucket(&wd[(size_t)i * 7]); }
+    // [3.345.0] weekly は職員×シフト。deltaApply では old/nw の2バケットだけが動くので
+    // 該当2本だけ再計算する（他シフトの偏差は不変）。
+    long long contribWeeklyK(int i, int k) const {
+        if (k < 0 || k >= K) return 0;
+        return weeklyDevOfBucket(&wd[((size_t)i * K + k) * 7]);
+    }
     long long contribDayGroups(int j) const {
         long long v = 0;
         if (useBits) {
@@ -565,7 +568,7 @@ struct SaChunk {
             + contribCellHard(i, j)
             + contribRangeApt(i, old) + contribRangeApt(i, nw)
             + contribFair(g, old) + contribFair(g, nw)
-            + contribWeekly(i)
+            + contribWeeklyK(i, old) + contribWeeklyK(i, nw)
             + contribDayGroups(j)
             + contribCov(old, j) + contribCov(nw, j);
         a[(size_t)i * T + j] = nw;
@@ -583,7 +586,7 @@ struct SaChunk {
             + contribCellHard(i, j)
             + contribRangeApt(i, old) + contribRangeApt(i, nw)
             + contribFair(g, old) + contribFair(g, nw)
-            + contribWeekly(i)
+            + contribWeeklyK(i, old) + contribWeeklyK(i, nw)
             + contribDayGroups(j)
             + contribCov(old, j) + contribCov(nw, j);
         score += after - before;
