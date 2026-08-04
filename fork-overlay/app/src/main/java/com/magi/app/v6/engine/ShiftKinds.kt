@@ -1,4 +1,6 @@
 package com.magi.app.v6.engine
+import com.magi.app.v6.canDo
+import com.magi.app.v6.allowedShiftsForStaff
 
 import com.magi.app.v6.Problem
 
