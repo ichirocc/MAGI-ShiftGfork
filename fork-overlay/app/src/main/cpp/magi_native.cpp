@@ -314,7 +314,7 @@ struct SaChunk {
     std::vector<int> a;    // S*T
     std::vector<int> ssn;  // S*K
     std::vector<int> dsn;  // T*K
-    std::vector<int> wd;   // S*7
+    std::vector<int> wd;   // S*K*7 [3.345.0] 職員×シフト×曜日（休も1シフト）
     // [ビット化] c1窓 / c41-c42 の O(1) 評価用マスク（S,T<=64 のとき有効）。効果は deltaApply の contrib* 経由。
     //   fullEvalParts はスカラーのまま＝自己整合(status)がビット化 delta をチャンク毎に照合する基準。
     bool useBits;
@@ -579,9 +579,12 @@ struct SaChunk {
             if (oldIn) { rowMask[(size_t)i * K + old] &= ~jb; dayShiftMask[(size_t)j * K + old] &= ~ib; }
             if (newIn) { rowMask[(size_t)i * K + nw] |= jb;  dayShiftMask[(size_t)j * K + nw] |= ib; }
         }
-        bool oldWork = oldIn && old != p.restIdx;
-        bool newWork = newIn && nw != p.restIdx;
-        if (oldWork != newWork) wd[(size_t)i * 7 + (p.dow0 + j) % 7] += newWork ? 1 : -1;
+        // [3.345.0] weekly シフト別バケット更新
+        {
+            const size_t b = (size_t)(p.dow0 + j) % 7;
+            if (oldIn) wd[((size_t)i * K + old) * 7 + b]--;
+            if (newIn) wd[((size_t)i * K + nw) * 7 + b]++;
+        }
         long long after = contribC1Row(i) + contribC2Row(i) + contribC3Row(i)
             + contribCellHard(i, j)
             + contribRangeApt(i, old) + contribRangeApt(i, nw)
