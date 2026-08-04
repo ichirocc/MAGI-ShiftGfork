@@ -55,7 +55,7 @@ object OptimizeBenchLog {
         }
 
         fun toMirrorLog(iter: Long = iters): MirrorLog =
-            MirrorLog(message = line(), level = "I")
+            MirrorLog(tag = TAG, message = line())
     }
 
     data class Summary(
