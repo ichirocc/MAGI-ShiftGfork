@@ -4,10 +4,6 @@ import com.magi.app.v6.Problem
 import com.magi.app.v6.dayDemand
 import com.magi.app.v6.engine.ShiftKinds
 
-/**
- * 期間カバレッジ不足の保守的下界。
- * production Problem は拡張プロパティ [dayDemand] を使用。
- */
 object C1SuffixLowerBound {
     const val MAX_EXACT_CELLS = 262_144L
 
