@@ -164,7 +164,7 @@ class FocusAwareFixProvider(
     }
 
     private fun proposeApt(board: BoardView, rng: Random): Move? {
-        val skill = problem.skillMatrix()
+        val skill = problem.skillMatrix
         for (s in (0 until problem.S).shuffled(rng)) {
             for (d in (0 until problem.T).shuffled(rng)) {
                 if (problem.wishLocked(s, d)) continue
