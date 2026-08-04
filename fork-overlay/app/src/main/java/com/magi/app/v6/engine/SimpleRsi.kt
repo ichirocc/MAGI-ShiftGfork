@@ -3,6 +3,7 @@ package com.magi.app.v6.engine
 import com.magi.app.v6.Problem
 import com.magi.app.v6.ViolationReport
 import com.magi.app.v6.engine.nativex.NativeWritesProbe
+import com.magi.app.v6.engine.nativex.tryTransitionStrictWithOptionalNativeSkip
 import java.util.Random
 
 /**
