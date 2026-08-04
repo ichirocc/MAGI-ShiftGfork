@@ -91,12 +91,35 @@ class SchedulerService(
         g4.considerStrict(session.best, session.bestReport)
         emit("g1")
 
-        G2FocusRepair(problem, session, fixProvider = fixProvider).run(
-            G2Params(budgetMs = g2Ms, shouldStop = { stopSearch() }, infeasibleFamilies = infeasible, nativeProbe = nativeProbe),
+                // RSI（フォーク元分解）: 最大違反族フォーカス
+        val rsiMs = (g2Ms * 0.55).toLong().coerceAtLeast(1L)
+        val alnsMs = (g2Ms - rsiMs).coerceAtLeast(1L)
+        SimpleRsi(problem, session, fixProvider).run(
+            SimpleRsi.Params(
+                budgetMs = rsiMs,
+                shouldStop = { stopSearch() },
+                infeasible = infeasible,
+                nativeProbe = nativeProbe,
+                maxIters = fixedItersG2,
+            ),
             rng,
         )
         g4.considerStrict(session.best, session.bestReport)
-        emit("g2")
+        emit("rsi")
+
+        // ALNS + VNS（フォーク元分解・論文近傍）
+        if (!stopSearch() && alnsMs > 0L) {
+            val alnsDeadline = System.currentTimeMillis() + alnsMs
+            AlnsPolish(problem, rng).run(session, alnsDeadline)
+            g4.considerStrict(session.best, session.bestReport)
+            emit("alns")
+            if (!stopSearch() && System.currentTimeMillis() < alnsDeadline) {
+                VnsPolish(problem, rng).run(session, alnsDeadline)
+                g4.considerStrict(session.best, session.bestReport)
+                emit("vns")
+            }
+        }
+
 
         val (sessionAfter, stopG3) = G3FamilyPolish(g3Backend, problem, rng).run(
             session,
