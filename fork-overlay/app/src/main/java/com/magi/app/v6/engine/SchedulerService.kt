@@ -37,6 +37,9 @@ class SchedulerService(
         baseSeed: Long = 0L,
         nativeProbe: com.magi.app.v6.engine.nativex.NativeWritesProbe? = null,
         progressListener: SearchProgressListener? = null,
+        fixedItersG1: Long = 0L,
+        fixedItersG2: Long = 0L,
+        skipPostProcess: Boolean = false,
     ): RunArtifacts {
         val started = System.currentTimeMillis()
         val searchDl = profile.searchDeadline(started)
