@@ -1,0 +1,66 @@
+name: Cleanup Artifacts
+
+# アーティファクト保存枠を解放するワークフロー。
+# 入力や日数による分岐は廃止し、無条件で「全件削除」をハードコードする。
+# 明示ページング(listArtifactsForRepo)で total_count もログに出すので、
+# 0 件なら本リポジトリに実体が無い（＝枠超過はアカウント共有枠/他リポジトリ起因）と確定できる。
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-artifacts
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete ALL artifacts (hard-coded)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // 明示ページングで全件収集（paginate のラッパー差異を避ける）。
+            let page = 1;
+            const all = [];
+            while (true) {
+              const res = await github.rest.actions.listArtifactsForRepo({
+                owner, repo, per_page: 100, page,
+              });
+              core.info(`page ${page}: total_count=${res.data.total_count}, got=${res.data.artifacts.length}`);
+              const arts = res.data.artifacts || [];
+              if (arts.length === 0) break;
+              all.push(...arts);
+              if (arts.length < 100) break;
+              page++;
+            }
+            core.info(`collected ${all.length} artifacts`);
+
+            // 無条件で全削除。
+            let deleted = 0, failed = 0, freedBytes = 0;
+            for (const a of all) {
+              try {
+                await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: a.id });
+                deleted++; freedBytes += (a.size_in_bytes || 0);
+                core.info(`deleted #${a.id} "${a.name}" (${a.size_in_bytes} bytes, created ${a.created_at})`);
+              } catch (e) {
+                failed++;
+                core.warning(`failed to delete #${a.id} "${a.name}": ${e.message}`);
+              }
+            }
+
+            const mib = (freedBytes / (1024 * 1024)).toFixed(1);
+            const msg = `Deleted ALL: ${deleted}/${all.length} artifacts (failed ${failed}), freed ~${mib} MiB`;
+            core.notice(msg);
+            await core.summary
+              .addHeading('Artifact cleanup (delete ALL)')
+              .addRaw(`${msg}. If total was 0, this repository holds no artifacts (quota is account-wide / other repos).`)
+              .write();
