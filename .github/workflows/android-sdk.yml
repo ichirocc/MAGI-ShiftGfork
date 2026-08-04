@@ -1,0 +1,47 @@
+name: Android SDK
+on:
+  workflow_dispatch:
+    inputs:
+      upload_apk:
+        description: "Upload built APKs as artifacts"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+jobs:
+  android-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: overlay-src
+      - uses: actions/checkout@v4
+        with:
+          repository: ichirocc/magi7ichiro-fork
+          path: app-base
+      - run: cp -a overlay-src/fork-overlay/. app-base/
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+      - run: |
+          wget -q -O /tmp/gradle.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          unzip -q /tmp/gradle.zip -d "$HOME/gradle-dist"
+          echo "$HOME/gradle-dist/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+      - name: assembleDebug assembleRelease
+        working-directory: app-base
+        run: gradle assembleDebug assembleRelease --stacktrace
+      - if: ${{ inputs.upload_apk == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: |
+            app-base/app/build/outputs/apk/debug/*.apk
+            app-base/app/build/outputs/apk/release/*.apk
+          retention-days: 7
