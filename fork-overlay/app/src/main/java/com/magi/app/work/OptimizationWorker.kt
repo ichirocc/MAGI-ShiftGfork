@@ -10,7 +10,10 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.magi.app.v6.V6FinalPort
+import com.magi.app.v6.engine.AppVersion
+import com.magi.app.v6.engine.OptimizeBenchLog
 import com.magi.app.v6.engine.integration.RebuildOptimizeEntry
+import android.util.Log
 import com.magi.app.v6.copy2D
 import com.magi.app.v6.toIntArray2D
 import com.magi.app.model.MagiState
@@ -52,6 +55,11 @@ class OptimizationWorker(
         // [C1] 入力をファイルへ退避（現在は参照渡し）。kill後の再起動でここから復元できる。
         runCatching { inputFile(ctx).writeText(StateParser.serialize(req.first, req.second)) }
         OptimizationRepository.setRunning(true)
+        runCatching {
+            val v = AppVersion.info
+            Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION ${v.logLine()}")
+            Log.i("MAGI", "アプリ版 ${v.compact()} / ${v.logLine()}")
+        }
         // [P2修正/レビュー指摘] 予算秒数・並列数は WorkManager の inputData から復元する。
         //   旧: インメモリの OptimizationRepository のみで、プロセス再起動後は既定の 60秒/4並列 に
         //   化けていた（300秒/8並列で開始したジョブが別条件で再実行される）。inputData は WorkManager が
