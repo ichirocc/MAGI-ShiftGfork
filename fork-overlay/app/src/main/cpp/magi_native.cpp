@@ -258,15 +258,20 @@ void fullEvalParts(const MagiProblem& p, const int* a, long long out[2]) {
         }
     }
 
-    // weekly（職員×曜日、round(勤務日/7) からの L1 偏差）
-    for (int i = 0; i < S; i++) {
-        int wd[7] = {0, 0, 0, 0, 0, 0, 0};
-        const int* row = a + (size_t)i * T;
-        for (int j = 0; j < T; j++) {
-            int k = row[j];
-            if (k != p.restIdx && k >= 0 && k < K) wd[(p.dow0 + j) % 7]++;
+    // weekly（職員×シフト×曜日、round(そのシフトの回数/7) からの L1 偏差）
+    // [parity fix] Kotlin Evaluator / MirrorCore 3.345.0 と同式。休も通常シフト種として均す。
+    // 旧: 勤務日(非休)のみの二値 weekly → soft が Kotlin より小さくパリティ不一致の主因だった。
+    {
+        std::vector<int> wdk((size_t)K * 7, 0);
+        for (int i = 0; i < S; i++) {
+            std::fill(wdk.begin(), wdk.end(), 0);
+            const int* row = a + (size_t)i * T;
+            for (int j = 0; j < T; j++) {
+                int k = row[j];
+                if (k >= 0 && k < K) wdk[(size_t)k * 7 + (p.dow0 + j) % 7]++;
+            }
+            for (int k = 0; k < K; k++) soft += weeklyDevOfBucket(&wdk[(size_t)k * 7]);
         }
-        soft += weeklyDevOfBucket(wd);
     }
 
     // 被覆（covU=HARD / covO=SOFT, per-cell OR/AND）
