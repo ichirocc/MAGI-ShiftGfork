@@ -15,6 +15,7 @@ import com.magi.app.v6.engine.EngineWiring
 import com.magi.app.v6.engine.ObjectiveWeightsSource
 import com.magi.app.v6.engine.SearchProgress
 import com.magi.app.v6.engine.SearchProgressListener
+import com.magi.app.v6.engine.AppVersion
 import com.magi.app.v6.engine.OptimizeBenchLog
 import com.magi.app.v6.engine.adapters.ScheduleImprover
 import com.magi.app.v6.engine.c1.C1JointLnsEngine
@@ -60,6 +61,7 @@ object FullOptimizePipeline {
     ): ScheduleRunResult {
         ObjectiveWeightsSource.install(MirrorKeys.hard, MirrorKeys.weights)
 
+        android.util.Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION ${AppVersion.info.logLine()} engine=rebuild pipeline=FullOptimize")
         val wall0 = System.currentTimeMillis()
         OptimizeBenchLog.beginRun(
             engine = OptimizeBenchLog.ENGINE_REBUILD,
