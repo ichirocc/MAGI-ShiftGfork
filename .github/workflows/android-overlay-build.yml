@@ -30,31 +30,26 @@ jobs:
       - name: Ensure plugin repositories
         working-directory: app-base
         run: |
-          # settings.gradle.kts に gradlePluginPortal が無い場合に追記
-          if [ -f settings.gradle.kts ]; then
-            if ! grep -q 'gradlePluginPortal' settings.gradle.kts; then
-              cat >> settings.gradle.kts << 'S'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-S
-            fi
+          set -euo pipefail
+          mkdir -p "$HOME/.gradle"
+          printf '%s\n' \
+            'settingsEvaluated {' \
+            '  pluginManagement.repositories.apply {' \
+            '    mavenCentral()' \
+            '    google()' \
+            '    gradlePluginPortal()' \
+            '  }' \
+            '}' > "$HOME/.gradle/init.gradle.kts"
+          if [ -f settings.gradle.kts ] && ! grep -q gradlePluginPortal settings.gradle.kts; then
+            printf '\n%s\n' \
+              'pluginManagement {' \
+              '    repositories {' \
+              '        google()' \
+              '        mavenCentral()' \
+              '        gradlePluginPortal()' \
+              '    }' \
+              '}' >> settings.gradle.kts
           fi
-          # init script fallback
-          mkdir -p ~/.gradle
-          cat > ~/.gradle/init.gradle.kts << 'I'
-settingsEvaluated {
-    pluginManagement.repositories.apply {
-        mavenCentral()
-        google()
-        gradlePluginPortal()
-    }
-}
-I
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
