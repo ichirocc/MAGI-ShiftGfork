@@ -56,3 +56,12 @@ debug ビルドは `BuildConfig.REBUILD_ENGINE=true` で再構築エンジンを
 - V6 Engine Check
 - Android Overlay Build（assembleDebug + native .so）
 - Android SDK / Native Parity / Release Build
+
+## リポジトリの分離
+
+| リポジトリ | 役割 |
+|------------|------|
+| **magi7ichiro-fork** | 本番アプリ本体（従来 V6）。再構築エンジンは含まない |
+| **MAGI-ShiftGfork** | 再構築エンジン + `fork-overlay`（実験・移行用） |
+
+`magi7ichiro-fork` への本エンジンのマージは取り外済みです。統合する場合は本リポの `fork-overlay` を明示的に適用してください。
