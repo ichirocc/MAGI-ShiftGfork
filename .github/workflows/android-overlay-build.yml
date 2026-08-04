@@ -1,0 +1,68 @@
+name: Android Overlay Build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: android-overlay-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: overlay-src
+      - uses: actions/checkout@v4
+        with:
+          repository: ichirocc/magi7ichiro-fork
+          path: app-base
+      - name: Apply fork-overlay
+        run: |
+          set -euo pipefail
+          cp -a overlay-src/fork-overlay/. app-base/
+          ls app-base/app/src/main/java/com/magi/app/v6/engine | head
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+      - name: Gradle 9.3.1
+        run: |
+          wget -q -O /tmp/gradle.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          mkdir -p "$HOME/gradle-dist"
+          unzip -q /tmp/gradle.zip -d "$HOME/gradle-dist"
+          echo "$HOME/gradle-dist/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+      - name: testDebugUnitTest
+        working-directory: app-base
+        run: |
+          mkdir -p build/ci-logs
+          set -o pipefail
+          gradle testDebugUnitTest --stacktrace 2>&1 | tee build/ci-logs/testDebugUnitTest.log
+      - name: assembleDebug
+        working-directory: app-base
+        run: |
+          set -o pipefail
+          gradle assembleDebug --stacktrace 2>&1 | tee build/ci-logs/assembleDebug.log
+      - name: Verify libmagi_native.so
+        working-directory: app-base
+        run: |
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          unzip -l "$APK" | grep -E 'lib/.*/libmagi_native.so'
+      - if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-overlay-ci-logs
+          path: app-base/build/ci-logs/
+          retention-days: 7
