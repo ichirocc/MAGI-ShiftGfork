@@ -1,4 +1,9 @@
 package com.magi.app.v6.engine
+import com.magi.app.v6.dayDemand
+import com.magi.app.v6.wishLocked
+import com.magi.app.v6.canDo
+import com.magi.app.v6.allowedShiftsForStaff
+import com.magi.app.v6.preferred
 
 import com.magi.app.v6.Problem
 import com.magi.app.v6.skillMatrix
