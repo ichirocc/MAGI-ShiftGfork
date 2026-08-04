@@ -1,4 +1,5 @@
 package com.magi.app.v6.engine
+import com.magi.app.v6.wishLocked
 
 import com.magi.app.v6.MirrorLog
 import com.magi.app.v6.Problem
