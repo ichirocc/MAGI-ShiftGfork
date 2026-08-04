@@ -1,30 +1,12 @@
 package com.magi.app.v6
-import java.util.WeakHashMap
 
+import java.util.WeakHashMap
 import com.magi.app.v6.engine.config.ConstraintConfig
 
 /**
- * main [Problem] をエンジン API に合わせる拡張（同一 package で import 不要）。
+ * main [Problem] をエンジン向けに足す拡張。
+ * canDo / wishLocked / allowedShiftsForStaff は MirrorCore に既にあるためここでは定義しない。
  */
-
-fun Problem.canDo(staff: Int, shift: Int): Boolean {
-    if (staff !in 0 until S || shift !in 0 until K) return false
-    val g = sgrp.getOrNull(staff) ?: return false
-    return bucket.getOrNull(g)?.contains(shift) == true
-}
-
-fun Problem.allowedShiftsForStaff(staff: Int): List<Int> {
-    if (staff !in 0 until S) return emptyList()
-    val g = sgrp.getOrNull(staff) ?: return emptyList()
-    return bucket.getOrNull(g)?.toList() ?: emptyList()
-}
-
-fun Problem.wishLocked(staff: Int, day: Int): Boolean {
-    if (staff !in 0 until S || day !in 0 until T) return false
-    val w = wish[staff][day]
-    if (w < 0) return false
-    return canDo(staff, w)
-}
 
 val Problem.preferred: Array<IntArray> get() = wish
 
