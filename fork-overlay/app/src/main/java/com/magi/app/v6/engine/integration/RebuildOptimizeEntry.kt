@@ -1,12 +1,11 @@
 package com.magi.app.v6.engine.integration
 
+import android.util.Log
 import com.magi.app.model.MagiState
 import com.magi.app.v6.ScheduleRunResult
 import com.magi.app.v6.engine.AppVersion
 import com.magi.app.v6.engine.OptimizeBenchLog
 import com.magi.app.v6.engine.SearchProgress
-import com.magi.app.v6.MirrorLog
-import android.util.Log
 
 /**
  * Worker / UI から呼ぶ勤務表最適化の本番入口。
@@ -37,18 +36,15 @@ object RebuildOptimizeEntry {
     ): ScheduleRunResult {
         val ver = AppVersion.info
         Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION ${ver.logLine()} engine=rebuild")
-        runCatching {
-            // MirrorLog へも残し、アプリの操作ログ／ログ出力に載せる
-            OptimizeBenchLog.phase(
-                engine = OptimizeBenchLog.ENGINE_REBUILD,
-                phase = "start",
-                hard = 0, soft = 0, total = 0, weighted = 0.0,
-                elapsedMs = 0L, seed = seed, workers = workers,
-                budgetMs = budgetSec.coerceAtLeast(1) * 1000L,
-                note = "app_${ver.compact()}",
-            )
-        }
+        Log.i("MAGI", "アプリ版 ${ver.compact()}")
+
         val budgetMs = budgetSec.coerceAtLeast(1) * 1000L
+        OptimizeBenchLog.beginRun(
+            engine = OptimizeBenchLog.ENGINE_REBUILD,
+            seed = seed,
+            workers = workers.coerceIn(1, 16),
+            budgetMs = budgetMs,
+        )
         // 後処理 25s 相当を予算内に確保（最低でも 10%）
         val post = (budgetMs * 0.08).toLong().coerceIn(5_000L, 25_000L)
         val residual = (budgetMs * 0.12).toLong().coerceIn(3_000L, 40_000L)
