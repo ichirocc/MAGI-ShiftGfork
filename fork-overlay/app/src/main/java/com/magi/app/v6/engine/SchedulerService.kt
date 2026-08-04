@@ -1,5 +1,7 @@
 package com.magi.app.v6.engine
 
+// WeightAuditLog in same package
+
 
 import com.magi.app.v6.MirrorLog
 import com.magi.app.v6.Problem
@@ -48,6 +50,7 @@ class SchedulerService(
         val g4 = G4Diversify(better)
         fun emit(phase: String, iters: Long = 0L, withSchedule: Boolean = true) {
             val elapsed = System.currentTimeMillis() - started
+            WeightAuditLog.logContribution(phase, session.bestReport)
             OptimizeBenchLog.phase(
                 engine = OptimizeBenchLog.ENGINE_REBUILD,
                 phase = phase,
