@@ -12,12 +12,12 @@ import com.magi.app.v6.findRangeLowFix
 import java.util.Random
 
 /**
- * main の find*Fix を LegacyCellFix に配線する完成実装。
- * find* は internal のため同一モジュール（app）内でのみリンクされる。
+ * main の find*Fix を LegacyCellFix に配線。
+ * DeltaEvaluator(problem) + reset(schedule) — 第2引数は c3RunMode: Boolean。
  */
 object MainLegacyFix {
     fun create(problem: Problem, schedule: Array<IntArray>): LegacyCellFix {
-        val eval = DeltaEvaluator(problem, schedule)
+        val eval = DeltaEvaluator(problem).also { it.reset(schedule) }
         return LegacyFixFactory.fromDispatchers { focus, rng ->
             when (focus) {
                 "covO" -> findCovOFix(problem, eval, rng)
