@@ -1,0 +1,13 @@
+<!-- MAGI conversation bubble (API 30+ / minSdk 36)
+     Merge into app/src/main/AndroidManifest.xml <application>:
+
+        <activity
+            android:name=".work.BubbleActivity"
+            android:exported="false"
+            android:allowEmbedded="true"
+            android:resizeableActivity="true"
+            android:documentLaunchMode="always"
+            android:theme="@style/Theme.Magi" />
+
+     Requires uses-permission POST_NOTIFICATIONS (already typical for FGS notify).
+-->
