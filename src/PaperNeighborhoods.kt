@@ -206,7 +206,7 @@ object PaperNeighborhoods {
             val allowed = problem.allowedShiftsForStaff(s)
             if (allowed.isEmpty()) return null
             val cur = board.current[s][day]
-            val alt = allowed.filter { it != cur }.ifEmpty { allowed }
+            val alt = allowed.filter { it != cur }.ifEmpty { allowed.toList() }
             writes[j++] = s; writes[j++] = day; writes[j++] = alt[rng.nextInt(alt.size)]
         }
         return Move(board.version, writes, "ruin_day", source)
