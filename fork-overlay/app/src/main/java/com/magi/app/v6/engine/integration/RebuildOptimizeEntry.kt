@@ -16,7 +16,6 @@ object RebuildOptimizeEntry {
     @Volatile
     var enabled: Boolean = false
 
-    /** Application / ViewModel から BuildConfig.REBUILD_ENGINE を反映 */
     fun applyBuildConfigDefault() {
         val v = runCatching {
             val cl = Class.forName("com.magi.app.BuildConfig")
@@ -35,8 +34,8 @@ object RebuildOptimizeEntry {
         onProgress: ((SearchProgress) -> Unit)? = null,
     ): ScheduleRunResult {
         val ver = AppVersion.info
-        Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION ${ver.logLine()} engine=rebuild")
-        Log.i("MAGI", "アプリ版 ${ver.compact()}")
+        Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION " + ver.logLine() + " engine=rebuild")
+        Log.i("MAGI", "アプリ版 " + ver.compact())
 
         val budgetMs = budgetSec.coerceAtLeast(1) * 1000L
         OptimizeBenchLog.beginRun(
@@ -45,7 +44,6 @@ object RebuildOptimizeEntry {
             workers = workers.coerceIn(1, 16),
             budgetMs = budgetMs,
         )
-        // 後処理 25s 相当を予算内に確保（最低でも 10%）
         val post = (budgetMs * 0.08).toLong().coerceIn(5_000L, 25_000L)
         val residual = (budgetMs * 0.12).toLong().coerceIn(3_000L, 40_000L)
         return FullOptimizePipeline.optimize(
