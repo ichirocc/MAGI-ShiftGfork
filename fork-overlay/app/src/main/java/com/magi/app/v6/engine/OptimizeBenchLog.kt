@@ -56,7 +56,7 @@ object OptimizeBenchLog {
         }
 
         fun toMirrorLog(iter: Long = iters): MirrorLog =
-            MirrorLog(iter = iter, level = "I", tag = TAG, message = line())
+            MirrorLog(message = line(), level = "I")
     }
 
     data class Summary(
@@ -127,7 +127,7 @@ object OptimizeBenchLog {
             hard = report?.hard ?: -1,
             soft = report?.soft ?: -1,
             total = report?.total ?: -1,
-            weighted = report?.weightedScore ?: -1.0,
+            weighted = (report?.weightedScore?.toDouble() ?: -1.0),
             elapsedMs = elapsedMs,
             iters = iters,
             seed = seed,
