@@ -3,17 +3,17 @@ package com.magi.app.v6.engine.integration
 import com.magi.app.model.MagiState
 import com.magi.app.v6.ScheduleRunResult
 import com.magi.app.v6.engine.SearchProgress
-import com.magi.app.v6.engine.SearchProgressListener
 
+/**
+ * Worker / UI から呼ぶ勤務表最適化の本番入口。
+ * 内部は [FullOptimizePipeline]（初期解・G1–G4・HARD 残差・最終評価）。
+ */
 object RebuildOptimizeEntry {
-    /**
-     * 実行時トグル。起動時に [applyBuildConfigDefault] で BuildConfig.REBUILD_ENGINE を反映可能。
-     */
     @JvmField
     @Volatile
     var enabled: Boolean = false
 
-    /** Application.onCreate から1回呼ぶ */
+    /** Application / ViewModel から BuildConfig.REBUILD_ENGINE を反映 */
     fun applyBuildConfigDefault() {
         val v = runCatching {
             val cl = Class.forName("com.magi.app.BuildConfig")
@@ -31,16 +31,24 @@ object RebuildOptimizeEntry {
         shouldStop: () -> Boolean = { false },
         onProgress: ((SearchProgress) -> Unit)? = null,
     ): ScheduleRunResult {
-        val listener = onProgress?.let { cb -> SearchProgressListener { p -> cb(p) } }
-        return V6RebuildPort.optimize(
+        val budgetMs = budgetSec.coerceAtLeast(1) * 1000L
+        // 後処理 25s 相当を予算内に確保（最低でも 10%）
+        val post = (budgetMs * 0.08).toLong().coerceIn(5_000L, 25_000L)
+        val residual = (budgetMs * 0.12).toLong().coerceIn(3_000L, 40_000L)
+        return FullOptimizePipeline.optimize(
             state = state,
-            schedule = schedule,
-            budgetMs = budgetSec.coerceAtLeast(1) * 1000L,
-            seed = seed,
-            workers = workers.coerceIn(1, 16),
+            scheduleIn = schedule,
+            options = FullOptimizePipeline.Options(
+                budgetMs = budgetMs,
+                postReserveMs = post,
+                seed = seed,
+                workers = workers.coerceIn(1, 16),
+                autoNative = true,
+                generateInitialIfNeeded = true,
+                hardResidualMs = residual,
+            ),
             shouldStop = shouldStop,
-            autoNative = true,
-            progressListener = listener,
+            onProgress = onProgress,
         )
     }
 }
