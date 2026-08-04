@@ -1,0 +1,38 @@
+name: V6 Engine Check
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: v6-engine-check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  engine-jvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install kotlinc
+        run: |
+          curl -sL "https://github.com/JetBrains/kotlin/releases/download/v1.9.25/kotlin-compiler-1.9.25.zip" -o /tmp/kotlin.zip
+          unzip -q /tmp/kotlin.zip -d "$HOME"
+          echo "$HOME/kotlinc/bin" >> "$GITHUB_PATH"
+      - name: Compile + CiSmoke
+        env:
+          MAGI_BUDGET_MS: "1500"
+          MAGI_SEEDS: "2"
+        run: |
+          set -euo pipefail
+          STDLIB=$(find "$HOME/kotlinc" -name 'kotlin-stdlib.jar' | head -1)
+          mkdir -p out
+          find src -name '*.kt' | sort > /tmp/srcs.txt
+          kotlinc -cp "$STDLIB" -d out @/tmp/srcs.txt
+          java -cp "out:$STDLIB" com.magi.app.v6.engine.CiSmokeKt
