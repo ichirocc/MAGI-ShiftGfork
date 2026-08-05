@@ -19,7 +19,7 @@ android {
 
     defaultConfig {
         // REBUILD_ENGINE は buildTypes で上書き（debug=true / release=false）
-        buildConfigField("Boolean", "REBUILD_ENGINE", "false")
+        buildConfigField("Boolean", "REBUILD_ENGINE", "true")
         applicationId = "com.magi.app"
         minSdk = 36
         targetSdk = 36
@@ -42,7 +42,7 @@ android {
             // Personal-test release APK: signed with the debug key so it is installable from Actions.
             // Replace with a private release signingConfig before store distribution.
             signingConfig = signingConfigs.getByName("debug")
-            buildConfigField("Boolean", "REBUILD_ENGINE", "false")
+            buildConfigField("Boolean", "REBUILD_ENGINE", "true")
             // No shrinking for this personal-test build. proguardFiles() is intentionally omitted:
             // it is ignored while isMinifyEnabled = false and only invites the false impression that
             // shrink rules are active. Re-add it together with isMinifyEnabled = true for a store build.
