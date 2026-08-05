@@ -106,6 +106,11 @@ object FullOptimizePipeline {
 
         var handle = 0L
         val probe: NativeWritesProbe? = if (options.autoNative && NativeBridge.available) {
+            // 探索前に 1 盤面パリティ。不一致なら native を閉じ probe=null
+            if (!com.magi.app.v6.NativeParityGate.assertOrDisable(problem, schedule0, "pipeline-start")) {
+                android.util.Log.w("MAGI", "native disabled after parity fail; Kotlin only")
+                null
+            } else
             handle = runCatching { NativeEval.createHandle(problem) }.onFailure { android.util.Log.e("MAGI", "NativeEval.createHandle failed", it) }.getOrDefault(0L)
             if (handle != 0L) NativeBridgeProbe(handle) else null
         } else null
