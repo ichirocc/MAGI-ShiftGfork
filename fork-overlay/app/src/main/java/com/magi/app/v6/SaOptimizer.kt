@@ -177,8 +177,7 @@ class SaOptimizer(private val problem: Problem, private val evaluator: Evaluator
                 if (NativeGate.parityCheckEnabled) {
                     TuningTelemetry.parityChecks.incrementAndGet()
                     val kotlinScore = evaluator.fullEval(bestSol)
-                    if (kotlinScore != newBest) {
-                        NativeGate.disable("Kotlin照合NG (native=$newBest kotlin=$kotlinScore)")
+                    if (!NativeParityGate.assertPackedOrDisable(newBest, kotlinScore, "SA-chunk")) {
                         return false
                     }
                 }
