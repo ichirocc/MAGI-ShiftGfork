@@ -42,9 +42,10 @@ class SearchSessionFull(
     private val touchBuf = LongArray(128)
 
     init {
-        ProblemGuards.requireRunnable(problem)
-        require(ProblemGuards.scheduleShapeOk(problem, initial)) {
-            "schedule shape must be SxT"
+        if (!ProblemGuards.isRunnable(problem) || !ProblemGuards.scheduleShapeOk(problem, initial)) {
+            android.util.Log.e("MAGI", "SearchSessionFull: invalid problem/schedule S=${problem.S} T=${problem.T}")
+            // 続行は危険なので明示的に失敗（呼び出し側で catch）
+            throw IllegalArgumentException("SearchSessionFull: invalid problem or schedule shape")
         }
         counts.rebuildFrom(current, problem.T)
         bits?.let {
