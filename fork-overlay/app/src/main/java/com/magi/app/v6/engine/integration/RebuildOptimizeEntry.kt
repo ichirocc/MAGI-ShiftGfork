@@ -14,14 +14,15 @@ import com.magi.app.v6.engine.SearchProgress
 object RebuildOptimizeEntry {
     @JvmField
     @Volatile
-    var enabled: Boolean = false
+    var enabled: Boolean = true  // MAGI-ShiftGfork: 既定は再構築（V5 SA 強制終了回避）
 
     fun applyBuildConfigDefault() {
         val v = runCatching {
             val cl = Class.forName("com.magi.app.BuildConfig")
             cl.getField("REBUILD_ENGINE").getBoolean(null)
         }.getOrDefault(false)
-        enabled = v
+        enabled = true  // ShiftGfork では常に再構築。BuildConfig は参考ログのみ
+        android.util.Log.i("MAGI", "RebuildOptimizeEntry enabled=true (buildConfig=$v)")
     }
 
     fun optimize(
