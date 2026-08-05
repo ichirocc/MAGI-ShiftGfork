@@ -75,7 +75,7 @@ object WeightAuditLog {
 
         // 妥当性ヒューリスティック
         val notes = ArrayList<String>()
-        val hardUnit = ViolationReport.HARD_UNIT.toDouble()
+        val hardUnit = 1_000_000_000.0
         if (softSum >= hardUnit) {
             notes.add("WARN_soft_overflow_hard_unit")
         } else {
