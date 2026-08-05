@@ -100,6 +100,9 @@ class SchedulerService(
                 // RSI（フォーク元分解）: 最大違反族フォーカス
         val rsiMs = (g2Ms * 0.55).toLong().coerceAtLeast(1L)
         val alnsMs = (g2Ms - rsiMs).coerceAtLeast(1L)
+        if (skipPostProcess) {
+            return session.snapshotBest(stopReason = StopReason.FIXED_POINT)
+        }
         SimpleRsi(problem, session, fixProvider).run(
             SimpleRsi.Params(
                 budgetMs = rsiMs,
