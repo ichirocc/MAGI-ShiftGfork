@@ -15,6 +15,9 @@ data class EngineOptions(
     val workers: Int = 1,
     val nativeProbe: com.magi.app.v6.engine.nativex.NativeWritesProbe? = null,
     val progressListener: SearchProgressListener? = null,
+    val fixedItersG1: Long = 0L,
+    val fixedItersG2: Long = 0L,
+    val skipPostProcess: Boolean = false,
 )
 
 /**
@@ -72,6 +75,9 @@ class EngineFacade(
             baseSeed = options.seed,
             nativeProbe = options.nativeProbe,
             progressListener = options.progressListener,
+            fixedItersG1 = options.fixedItersG1,
+            fixedItersG2 = options.fixedItersG2,
+            skipPostProcess = options.skipPostProcess,
         )
     }
 
