@@ -5,6 +5,9 @@ import com.magi.app.v6.ViolationReport
 import com.magi.app.v6.betterReport
 import com.magi.app.v6.engine.BuiltinScheduleImprover
 import com.magi.app.v6.engine.EngineFacade
+import com.magi.app.v6.engine.ObjectiveWeightsSource
+import com.magi.app.v6.engine.ProblemGuards
+import com.magi.app.v6.engine.WeightAuditLog
 import com.magi.app.v6.engine.EngineOptions
 import com.magi.app.v6.engine.FocusAwareFixProvider
 import com.magi.app.v6.engine.FocusFixProvider
@@ -48,6 +51,12 @@ class MainOptimizeBridge(
         workers: Int = this.workers,
         progressListener: SearchProgressListener? = this.progressListener,
     ): RunArtifacts {
+        ObjectiveWeightsSource.ensureDefaults()
+        WeightAuditLog.logTable()
+        if (!ProblemGuards.isRunnable(problem)) {
+            val rep = runCatching { evaluate(initial) }.getOrElse { com.magi.app.v6.ViolationReport.EMPTY }
+            return com.magi.app.v6.engine.RunArtifacts(schedule = initial, report = rep)
+        }
         val facade = EngineFacade(
             problem = problem,
             evaluate = evaluate,
