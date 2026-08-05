@@ -37,6 +37,7 @@ class G1LocalAnnealer(
         private set
 
     fun run(params: G1Params, rng: Random): Long {
+        if (!ProblemGuards.isRunnable(problem)) return 0L
         val start = System.nanoTime() / 1_000_000L
         val tp = params.temperature
         struct = StructuralMoveFactory(problem, rng)
@@ -113,6 +114,7 @@ class G1LocalAnnealer(
 
     /** 停滞脱出: 高温 Metropolis で current を動かす。best は better のときだけ。 */
     fun perturb(rng: Random, cells: Int = 4 + rng.nextInt(8)) {
+        if (!ProblemGuards.isRunnable(problem)) return
         val hot = 1e9
         val st = struct ?: StructuralMoveFactory(problem, rng)
         st.anyStructural(session)?.let {
@@ -164,6 +166,7 @@ class G1LocalAnnealer(
     }
 
     private fun proposeSingle(rng: Random): Move? {
+        if (problem.S <= 0 || problem.T <= 0 || problem.K <= 0) return null
         val s = rng.nextInt(problem.S)
         var d = rng.nextInt(problem.T)
         var tries = 0
