@@ -57,6 +57,18 @@ object NativeBridge {
         lahcThreshold: Long,
     ): LongArray
 
+    /**
+     * C++ SaChunk.deltaApply による差分スコア。
+     * 戻り値 [status, beforePacked, afterPacked, soft]。status 0=失敗 1=成功。
+     * 盤面は変更しない（内部コピー上で差分）。
+     */
+    @JvmStatic
+    external fun nativeDeltaEval(
+        handle: Long,
+        schedule: IntArray,
+        writes: IntArray,
+    ): LongArray
+
     /** [Stage3] SA チャンク（冷却ラダー1本）。cur/best は S*T 平坦・status==0 のときのみ書き戻し。
      *  戻り値 [status, curScore, bestScore, iters, improvedInChunk, tailIters]。 */
     @JvmStatic
