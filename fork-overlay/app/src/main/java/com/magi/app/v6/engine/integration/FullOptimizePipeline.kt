@@ -61,7 +61,10 @@ object FullOptimizePipeline {
         shouldStop: () -> Boolean = { false },
         onProgress: ((SearchProgress) -> Unit)? = null,
     ): ScheduleRunResult {
-        ObjectiveWeightsSource.install(MirrorKeys.hard, MirrorKeys.weights)
+        ObjectiveWeightsSource.install(
+            MirrorKeys.hard,
+            MirrorKeys.weights.filterKeys { it !in MirrorKeys.hard },
+        )
         WeightAuditLog.logTable()
 
         android.util.Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION ${AppVersion.info.logLine()} engine=rebuild pipeline=FullOptimize")
