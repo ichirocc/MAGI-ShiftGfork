@@ -78,15 +78,15 @@ object FullOptimizePipeline {
 
         val schedule0 = ensureInitial(state, scheduleIn, options.generateInitialIfNeeded)
         val problem = Problem(state)
+        val evaluate: (Array<IntArray>) -> ViolationReport = { sch ->
+            UnifiedViolationChecker.check(state, sch)
+        }
         if (!ProblemGuards.isRunnable(problem) || !ProblemGuards.scheduleShapeOk(problem, schedule0)) {
             android.util.Log.e("MAGI", "FullOptimizePipeline: problem/schedule not runnable")
             val rep = runCatching { evaluate(schedule0) }.getOrElse {
-                runCatching { UnifiedViolationChecker.check(state, scheduleIn) }.getOrElse { evaluate(scheduleIn) }
+                runCatching { evaluate(scheduleIn) }.getOrThrow()
             }
             return ScheduleRunResult(schedule = scheduleIn, report = rep)
-        }
-        val evaluate: (Array<IntArray>) -> ViolationReport = { sch ->
-            UnifiedViolationChecker.check(state, sch)
         }
         val better = ::betterReport
         val baseSeed = if (options.seed != 0L) options.seed else System.nanoTime()
