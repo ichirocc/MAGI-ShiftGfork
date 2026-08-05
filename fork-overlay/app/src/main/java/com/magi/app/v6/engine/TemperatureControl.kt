@@ -69,7 +69,12 @@ class TemperatureController(
     params: TemperatureParams = TemperatureParams(),
     initialScore: Long = 0L,
 ) {
-    var params: TemperatureParams = params
+    var params: TemperatureParams = params.copy(
+        alpha = params.alpha.coerceIn(0.5, 0.999999),
+        tMin = params.tMin.coerceAtLeast(0.0),
+        acceptWindow = params.acceptWindow.coerceAtLeast(1),
+        stagnateIters = params.stagnateIters.coerceAtLeast(1L),
+    )
         private set
 
     var temperature: Double = params.t0.coerceAtLeast(params.tMin)
