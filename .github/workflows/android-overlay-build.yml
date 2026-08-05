@@ -27,6 +27,8 @@ jobs:
           set -euo pipefail
           cp -a overlay-src/fork-overlay/. app-base/
           ls app-base/app/src/main/java/com/magi/app/v6/engine | head
+          bash overlay-src/scripts/ensure-bubble-manifest.sh app-base/app/src/main/AndroidManifest.xml || true
+          grep -n BubbleActivity app-base/app/src/main/AndroidManifest.xml || echo WARN_no_bubble
       - name: Ensure plugin repositories
         working-directory: app-base
         run: |
