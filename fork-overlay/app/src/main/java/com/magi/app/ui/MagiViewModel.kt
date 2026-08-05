@@ -986,6 +986,8 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun runV6FullOptimize() {
+        // ShiftGfork: 常に再構築。BuildConfig/古い設定でも V5 SA に落ちない。
+        RebuildOptimizeEntry.enabled = true
         val st0 = state ?: return
         val sched0 = currentSchedule ?: return
         if (optimizeInFlight()) return
