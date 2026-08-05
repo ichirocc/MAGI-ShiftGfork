@@ -160,6 +160,11 @@ class SearchSessionFull(
             lastReject = TransitionResult.Rejected(RejectReason.NOOP)
             return null
         }
+        // exact-pin 追跡バッファ超過は不正（部分適用禁止）
+        if (move.cellCount > touchBuf.size) {
+            lastReject = TransitionResult.Rejected(RejectReason.INVALID_RANGE)
+            return null
+        }
         i = 0
         while (i < n) {
             val s = w[i]; val d = w[i + 1]; val sh = w[i + 2]
@@ -191,12 +196,6 @@ class SearchSessionFull(
             if (old != sh) {
                 fun touch(keySh: Int) {
                     if (keySh !in 0 until problem.K) return
-                    if (nTouch >= touchBuf.size) {
-                    lastReject = TransitionResult.Rejected(RejectReason.INVALID_RANGE)
-                    // タッチバッファ超過は不完全な exact-pin 追跡になるため適用しない
-                    while (i >= 3) { i -= 3; /* will revert below */ }
-                    return null
-                }
                     val key = (s.toLong() shl 32) or (keySh.toLong() and 0xffffffffL)
                     // 重複キーは before を最初の値のままにする
                     var exists = false
