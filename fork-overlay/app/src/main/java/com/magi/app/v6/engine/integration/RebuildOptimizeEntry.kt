@@ -55,7 +55,7 @@ object RebuildOptimizeEntry {
                 postReserveMs = post,
                 seed = seed,
                 workers = workers.coerceIn(1, 16),
-                autoNative = true,
+                autoNative = false, // JNI 強制終了回避（パリティ安定後に true）
                 generateInitialIfNeeded = true,
                 hardResidualMs = residual,
             ),
