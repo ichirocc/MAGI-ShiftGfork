@@ -211,6 +211,10 @@ class OptimizationWorker(
                 releasedByMe = true
             }
             Result.success()
+        } catch (t: Throwable) {
+            android.util.Log.e("MAGI", "OptimizationWorker fatal", t)
+            runCatching { BubbleSupport.postDone(ctx, "最適化でエラー: ${t.javaClass.simpleName}") }
+            Result.failure()
         } catch (e: CancellationException) {
             // [敵対的レビュー修正・#9] UI の stop() は cancelUniqueWork() の完了を待たず即座に
             //   clearFiles() するため、その直後に本Workerの進捗コールバックがまだキャンセルに
