@@ -21,6 +21,8 @@ data class G1Params(
     val shouldStop: () -> Boolean = { false },
     /** 任意: Native tryWrites プローブ（番兵は Session） */
     val nativeProbe: NativeWritesProbe? = null,
+    /** >0 なら時間ではなく反復上限で停止（再現テスト用） */
+    val maxIters: Long = 0L,
 )
 
 /**
@@ -52,7 +54,7 @@ class G1LocalAnnealer(
         var nativeHints = 0L
 
         fun timeUp() =
-            params.shouldStop() || (System.nanoTime() / 1_000_000L) - start >= params.budgetMs
+            params.shouldStop() || (params.maxIters > 0L && iters >= params.maxIters) || (System.nanoTime() / 1_000_000L) - start >= params.budgetMs
 
         while (!timeUp()) {
             iters++
