@@ -3,7 +3,6 @@ package com.magi.app.work
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-// isLaunchedFromBubble: Activity API 31+ (minSdk 36)
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,7 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.Modifier.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,11 +27,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 class BubbleActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val fromBubble = try {
+            isLaunchedFromBubble
+        } catch (_: Throwable) {
+            false
+        }
         setContent {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     BubbleContent(
-                        fromBubble = isLaunchedFromBubble,
+                        fromBubble = fromBubble,
                         onDismissBubble = {
                             BubbleSupport.clear(this)
                             finish()
@@ -89,6 +93,6 @@ private fun BubbleContent(
 }
 
 private fun fmtElapsed(ms: Long): String {
-    val s = ms / 1000
+    val s = (ms / 1000).coerceAtLeast(0)
     return "%d:%02d".format(s / 60, s % 60)
 }
