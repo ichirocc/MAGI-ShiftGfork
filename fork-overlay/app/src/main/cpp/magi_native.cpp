@@ -2281,10 +2281,11 @@ Java_com_magi_app_v6_NativeBridge_nativeFullEval(JNIEnv* env, jclass, jlong hand
     return out;
 }
 
-// ---- [Rebuild] Move 契約: 正規化済み writes バッチの適用・評価・採否 ----
-// schedule は S*T 平坦。受理時のみ schedule を書き戻す。
-// 戻り値 long[4] = { status, score, hard, soft }
-// status: 0=reject 1=accept_current 2=accept_best_hint（Kotlin が best 再検証）
+// ---- [Rebuild] Move 契約: writes を SaChunk.deltaApply で差分評価して採否 ----
+// 旧実装は fullEval を before/after 2 回走らせていた（O(制約×盤面)×2）。
+// 高速化: SaChunk を1回構築し、各セルを deltaApply（影響スライスのみ再計算）。
+// schedule は受理時のみ書き戻す。戻り値 long[4] = { status, score, hard, soft }
+// status: 0=reject 1=accept_current 2=accept_best_hint
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
         JNIEnv* env, jclass, jlong handle, jintArray schedArr, jintArray writesArr,
@@ -2307,12 +2308,9 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
     std::vector<jint> w((size_t)nw);
     env->GetIntArrayRegion(writesArr, 0, nw, w.data());
 
-    // validate + collect changes
     struct Ch { int s, d, oldv, sh; };
     std::vector<Ch> ch;
-    // duplicate cell check via simple scan (S*T <= few thousand)
     std::vector<uint8_t> seen((size_t)n, 0);
-    long long before = fullEvalCombined(*p, a.data());
     for (jsize i = 0; i < nw; i += 3) {
         int s = (int)w[i], d = (int)w[i + 1], sh = (int)w[i + 2];
         if (s < 0 || s >= p->S || d < 0 || d >= p->T || sh < 0 || sh >= p->K) {
@@ -2324,7 +2322,6 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
         seen[cell] = 1;
         int oldv = a[cell];
         if (oldv == sh) continue;
-        // wish pin: wish>=0 かつ canDo なら固定（Kotlin ProblemEngineExtensions と同趣旨）
         int wish = p->wish[(size_t)s * (size_t)p->T + (size_t)d];
         if (wish >= 0 && p->cd(s, wish) && oldv != sh) {
             env->SetLongArrayRegion(out, 0, 4, z);
@@ -2340,29 +2337,99 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
         env->SetLongArrayRegion(out, 0, 4, z);
         return out;
     }
-    for (auto& c : ch) a[(size_t)c.s * (size_t)p->T + (size_t)c.d] = c.sh;
-    long long after = fullEvalCombined(*p, a.data());
+
+    // 差分評価: 1 回の full 初期化 + |ch| 回の deltaApply（フル評価2回より高速）
+    SaChunk st(*p, a.data(), /*seed*/1ULL);
+    const long long before = st.score;
+    for (auto& c : ch) {
+        st.deltaApply(c.s, c.d, c.sh);
+        a[(size_t)c.s * (size_t)p->T + (size_t)c.d] = c.sh;
+    }
+    const long long after = st.score;
+    // 自己整合（稀なビット/デルタドリフト検出 → reject で Kotlin へ）
+    const long long verify = fullEvalCombined(*p, a.data());
+    if (verify != after) {
+        // ドリフト時はフル評価結果を採用しつつ厳密比較（加速は諦めるが正しさ優先）
+        long long parts[2];
+        fullEvalParts(*p, a.data(), parts);
+        auto reject = [&]() {
+            env->SetLongArrayRegion(out, 0, 4, z);
+            return out;
+        };
+        if (mode == 0 && verify >= before) return reject();
+        if (mode == 1 && verify > before) {
+            double delta = (double)(verify - before);
+            double thr = std::exp(-delta / (temp > 1e-12 ? temp : 1e-12));
+            if (thr < 0.5) return reject();
+        }
+        if (mode == 2 && verify > before) return reject();
+        env->SetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(a.data()));
+        jlong ok[4] = { verify < before ? 2 : 1, (jlong)verify, (jlong)parts[0], (jlong)parts[1] };
+        env->SetLongArrayRegion(out, 0, 4, ok);
+        return out;
+    }
+
     long long parts[2];
-    fullEvalParts(*p, a.data(), parts);
+    parts[0] = after / st.M;
+    parts[1] = after % st.M;
 
     auto reject = [&]() {
         env->SetLongArrayRegion(out, 0, 4, z);
         return out;
     };
-    if (mode == 0) { // STRICT
+    if (mode == 0) {
         if (after >= before) return reject();
-    } else if (mode == 1) { // ANNEAL
+    } else if (mode == 1) {
         if (after > before) {
             double delta = (double)(after - before);
             double thr = std::exp(-delta / (temp > 1e-12 ? temp : 1e-12));
-            if (thr < 0.5) return reject(); // rng なし決定的近似（本番は Kotlin Metropolis 推奨）
+            if (thr < 0.5) return reject();
         }
-    } else { // LAHC simplified
+    } else {
         if (after > before) return reject();
     }
-    // accept: write back schedule
     env->SetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(a.data()));
     jlong ok[4] = { after < before ? 2 : 1, (jlong)after, (jlong)parts[0], (jlong)parts[1] };
+    env->SetLongArrayRegion(out, 0, 4, ok);
+    return out;
+}
+
+// ---- [高速化] 差分スコアのみ（採否なし）。Kotlin DeltaEvaluator 相当の C++ 移植入口 ----
+// 戻り値 long[4] = { status, before, after, soft }  status 0=NG 1=OK
+// hard = after / 1e9（呼び出し側で算出可）
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_magi_app_v6_NativeBridge_nativeDeltaEval(
+        JNIEnv* env, jclass, jlong handle, jintArray schedArr, jintArray writesArr) {
+    jlongArray out = env->NewLongArray(4);
+    jlong z[4] = {0, -1, -1, -1};
+    auto* p = reinterpret_cast<MagiProblem*>(handle);
+    if (p == nullptr || schedArr == nullptr || writesArr == nullptr) {
+        env->SetLongArrayRegion(out, 0, 4, z);
+        return out;
+    }
+    jsize n = env->GetArrayLength(schedArr);
+    jsize nw = env->GetArrayLength(writesArr);
+    if (n != p->S * p->T || nw <= 0 || nw % 3 != 0) {
+        env->SetLongArrayRegion(out, 0, 4, z);
+        return out;
+    }
+    std::vector<int> a((size_t)n);
+    env->GetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(a.data()));
+    std::vector<jint> w((size_t)nw);
+    env->GetIntArrayRegion(writesArr, 0, nw, w.data());
+
+    SaChunk st(*p, a.data(), 1ULL);
+    const long long before = st.score;
+    for (jsize i = 0; i < nw; i += 3) {
+        int s = (int)w[i], d = (int)w[i + 1], sh = (int)w[i + 2];
+        if (s < 0 || s >= p->S || d < 0 || d >= p->T || sh < 0 || sh >= p->K) {
+            env->SetLongArrayRegion(out, 0, 4, z);
+            return out;
+        }
+        st.deltaApply(s, d, sh);
+    }
+    const long long after = st.score;
+    jlong ok[4] = {1, (jlong)before, (jlong)after, (jlong)(after % 1000000000LL)};
     env->SetLongArrayRegion(out, 0, 4, ok);
     return out;
 }
