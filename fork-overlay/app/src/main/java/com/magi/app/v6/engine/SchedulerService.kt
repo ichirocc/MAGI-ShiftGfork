@@ -81,7 +81,7 @@ class SchedulerService(
         // G1: workers==1 → 単一 Session（再現性）。workers>=2 → 独立並列 SA → best を本 session に吸収
         if (workers <= 1) {
             (problem, session, packedScore).run(
-                G1Params(budgetMs = g1Ms, shouldStop = { stopSearch() }, nativeProbe = nativeProbe),
+                G1Params(budgetMs = g1Ms, shouldStop = { stopSearch() }, nativeProbe = nativeProbe, maxIters = fixedItersG1),
                 rng,
             )
         } else {
