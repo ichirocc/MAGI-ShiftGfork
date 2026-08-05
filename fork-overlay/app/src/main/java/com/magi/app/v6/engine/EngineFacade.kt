@@ -37,7 +37,7 @@ class EngineFacade(
         ObjectiveWeightsSource.ensureDefaults()
         if (!ProblemGuards.isRunnable(problem)) {
             val empty = Array(0) { IntArray(0) }
-            val rep = runCatching { evaluate(initial) }.getOrElse { ViolationReport() }
+            val rep = evaluate(initial)
             return RunArtifacts(
                 schedule = initial,
                 report = rep,
@@ -49,7 +49,7 @@ class EngineFacade(
         } else {
             // 形状不正: 休埋めで正規化できる場合のみ。不可なら early return。
             normalizeShape(problem, initial) ?: run {
-                val rep = runCatching { evaluate(initial) }.getOrElse { ViolationReport() }
+                val rep = evaluate(initial)
                 return RunArtifacts(schedule = initial, report = rep, stopReason = StopReason.CANCELLED)
             }
         }
@@ -77,7 +77,7 @@ class EngineFacade(
 
     private fun normalizeShape(problem: Problem, initial: Array<IntArray>): Array<IntArray>? {
         if (problem.S <= 0 || problem.T <= 0) return null
-        val rest = problem.restIdx.coerceIn(0, (problem.K - 1).coerceAtLeast(0))
+        val rest = 0  // OFF/rest as shift index 0 (休は通常シフト)
         return Array(problem.S) { s ->
             IntArray(problem.T) { d ->
                 val row = initial.getOrNull(s)
