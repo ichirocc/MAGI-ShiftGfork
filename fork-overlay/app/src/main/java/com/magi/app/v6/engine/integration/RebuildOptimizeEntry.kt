@@ -58,7 +58,7 @@ object RebuildOptimizeEntry {
                 postReserveMs = post,
                 seed = seed,
                 workers = workers.coerceIn(1, 16),
-                autoNative = false, // JNI 強制終了回避（パリティ安定後に true）
+                autoNative = true, // 差分は C++ SaChunk.deltaApply。パリティ NG 時は Kotlin 退化
                 generateInitialIfNeeded = true,
                 hardResidualMs = residual,
             ),
