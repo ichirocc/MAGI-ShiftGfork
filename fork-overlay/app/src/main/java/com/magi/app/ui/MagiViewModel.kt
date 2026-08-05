@@ -82,12 +82,22 @@ const val MAX_BUDGET_SEC = com.magi.app.v6.MAX_OPTIMIZE_SEC
 
 class MagiViewModel(app: Application) : AndroidViewModel(app) {
 
+    private val _ui = MutableStateFlow(UiState())
+
     init {
         RebuildOptimizeEntry.applyBuildConfigDefault()
         RebuildOptimizeEntry.enabled = true
+        val toggles = OptimizeToggleStore.load(getApplication())
+        OptimizeToggleStore.applyToRuntime(getApplication(), toggles)
+        _ui.value = _ui.value.copy(
+            wideC3nBreak = toggles.wideC3nBreak,
+            adaptiveEscape = toggles.adaptiveEscape,
+            softPolish = toggles.softPolish,
+            blockSwapC3nFilter = toggles.blockSwapC3nFilter,
+            nativeAccel = toggles.nativeAccel,
+            nativeParity = toggles.nativeParity,
+        )
     }
-
-    private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     private var originalJson: String? = null
@@ -590,6 +600,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     /** [ネイティブ加速 Stage4] ユーザートグル。OFF=C++チャンク不使用（番兵ゲートとは独立の意思表示）。 */
     fun setNativeAccel(on: Boolean) {
         com.magi.app.v6.NativeGate.userEnabled = on
+        OptimizeToggleStore.put(getApplication(), OptimizeToggleStore.KEY_NATIVE_ACCEL, on)
         _ui.update { it.copy(nativeAccel = on) }
         logOp("I", "設定変更: ネイティブ加速 → ${if (on) "ON" else "OFF"}")
     }
@@ -598,6 +609,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
      *  検証/ベンチ用・誤結果の可能性）。C++内部の自己整合(status)番兵は独立に常時有効。 */
     fun setNativeParity(on: Boolean) {
         com.magi.app.v6.NativeGate.parityCheckEnabled = on
+        OptimizeToggleStore.put(getApplication(), OptimizeToggleStore.KEY_NATIVE_PARITY, on)
         _ui.update { it.copy(nativeParity = on) }
         logOp(if (on) "I" else "W", "設定変更: Kotlinパリティ照合 → ${if (on) "ON" else "OFF（純ネイティブ・誤結果の可能性）"}")
     }
@@ -610,6 +622,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun setBlockSwapC3nFilter(on: Boolean) {
         com.magi.app.v6.PolishGate.filterC3nIncrease = on
+        OptimizeToggleStore.put(getApplication(), OptimizeToggleStore.KEY_BLOCK_SWAP_C3N, on)
         _ui.update { it.copy(blockSwapC3nFilter = on) }
         logOp("I", "設定変更: 禁止連続の事前フィルタ → ${if (on) "ON" else "OFF"}")
     }
@@ -621,6 +634,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun setWideC3nBreak(on: Boolean) {
         com.magi.app.v6.PolishGate.wideC3nBreakDays = on
+        OptimizeToggleStore.put(getApplication(), OptimizeToggleStore.KEY_WIDE_C3N, on)
         _ui.update { it.copy(wideC3nBreak = on) }
         logOp("I", "設定変更: 禁止連続の崩し範囲 → ${if (on) "パターン全域" else "前後1日"}")
     }
@@ -632,12 +646,17 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun setAdaptiveEscape(on: Boolean) {
         com.magi.app.v6.PolishGate.adaptiveEscapeControl = on
+        OptimizeToggleStore.put(getApplication(), OptimizeToggleStore.KEY_ADAPTIVE, on)
         _ui.update { it.copy(adaptiveEscape = on) }
         logOp("I", "設定変更: 行き詰まりからの立て直し方 → ${if (on) "残りの違反に合わせて選ぶ" else "順ぐりに試す"}")
     }
 
     fun setBudget(sec: Int) { val v = sec.coerceIn(10, MAX_BUDGET_SEC); _ui.update { it.copy(budgetSec = v) }; logOp("I", "設定変更: 予算 → ${v}秒") }
-    fun setSoftPolish(b: Boolean) { _ui.update { it.copy(softPolish = b) }; logOp("I", "設定変更: ソフト研磨 → ${if (b) "ON" else "OFF"}") }
+    fun setSoftPolish(b: Boolean) {
+        OptimizeToggleStore.put(getApplication(), OptimizeToggleStore.KEY_SOFT_POLISH, b)
+        _ui.update { it.copy(softPolish = b) }
+        logOp("I", "設定変更: ソフト研磨 → ${if (b) "ON" else "OFF"}")
+    }
     fun setV6Algorithm(a: V6Algorithm) { _ui.update { it.copy(v6Algorithm = a) }; logOp("I", "設定変更: 方式 → $a") }
 
     fun refreshCheck() {
