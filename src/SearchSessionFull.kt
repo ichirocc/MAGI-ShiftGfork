@@ -40,6 +40,10 @@ class SearchSessionFull(
     private val touchBuf = LongArray(128)
 
     init {
+        ProblemGuards.requireRunnable(problem)
+        require(ProblemGuards.scheduleShapeOk(problem, initial)) {
+            "schedule shape must be SxT"
+        }
         counts.rebuildFrom(current, problem.T)
         bits?.let {
             it.rebuildFrom(current)
@@ -96,6 +100,11 @@ class SearchSessionFull(
         val scoreBefore = packedScore(currentReport)
         val prepared = prepare(move) ?: return lastReject
         val (rep, snap) = prepared
+        // HARD 増加は温度に関係なく却下（再加熱 hot=1e9 でも best 以外の current を壊さない）
+        if (rep.hard > currentReport.hard) {
+            revertSnap(snap)
+            return TransitionResult.Rejected(RejectReason.NOT_BETTER)
+        }
         val scoreAfter = packedScore(rep)
         if (scoreAfter > scoreBefore) {
             val delta = (scoreAfter - scoreBefore).toDouble()
