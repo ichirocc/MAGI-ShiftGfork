@@ -45,6 +45,7 @@ class OptimizationWorker(
     }
 
     override suspend fun doWork(): Result {
+        RebuildOptimizeEntry.applyBuildConfigDefault()
         // 置き換え済み／停止済みの実行はここで降りる（共有ファイルへ触らない）。
         if (!ownsFiles()) return Result.success()
         // [C1] kill後にWorkManagerが再起動した場合、同一プロセス参照(request)は失われている。
