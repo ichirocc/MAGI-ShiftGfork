@@ -13,6 +13,7 @@ import com.magi.app.v6.betterReport
 import com.magi.app.v6.engine.BuiltinScheduleImprover
 import com.magi.app.v6.engine.EngineWiring
 import com.magi.app.v6.engine.ObjectiveWeightsSource
+import com.magi.app.v6.engine.ProblemGuards
 import com.magi.app.v6.engine.WeightAuditLog
 import com.magi.app.v6.engine.SearchProgress
 import com.magi.app.v6.engine.SearchProgressListener
@@ -62,6 +63,10 @@ object FullOptimizePipeline {
     ): ScheduleRunResult {
         ObjectiveWeightsSource.install(MirrorKeys.hard, MirrorKeys.weights)
         WeightAuditLog.logTable()
+        if (!ProblemGuards.isRunnable(problem)) {
+            val rep = evaluate(scheduleIn)
+            return ScheduleRunResult(schedule = scheduleIn, report = rep, logs = emptyList())
+        }
 
         android.util.Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION ${AppVersion.info.logLine()} engine=rebuild pipeline=FullOptimize")
         val wall0 = System.currentTimeMillis()
