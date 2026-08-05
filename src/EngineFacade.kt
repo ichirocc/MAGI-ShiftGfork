@@ -2,7 +2,6 @@ package com.magi.app.v6.engine
 
 import com.magi.app.v6.Problem
 import com.magi.app.v6.ViolationReport
-
 import java.util.Random
 
 data class EngineOptions(
@@ -16,14 +15,14 @@ data class EngineOptions(
     val workers: Int = 1,
     val nativeProbe: com.magi.app.v6.engine.nativex.NativeWritesProbe? = null,
     val progressListener: SearchProgressListener? = null,
-    /** >0 で G1/G2 を固定反復（再現テスト）。時間予算は上限のみ */
-    val fixedItersG1: Long = 0L,
-    val fixedItersG2: Long = 0L,
-    val skipPostProcess: Boolean = false,
 )
 
 /**
- * 単一入口。既定で FullyWiredG3 + FocusAwareFix を配線する。
+ * 単一入口。SchedulerService（G1→RSI→ALNS→VNS→G3→G4）へ配線する。
+ *
+ * 入口ガード:
+ * - ProblemGuards（S/T/K・盤面形状）
+ * - ObjectiveWeightsSource.ensureDefaults（重み未 install 時）
  */
 class EngineFacade(
     private val problem: Problem,
@@ -35,25 +34,56 @@ class EngineFacade(
     private val scheduler = SchedulerService(problem, evaluate, better, PackedScore::of)
 
     fun optimize(initial: Array<IntArray>, options: EngineOptions = EngineOptions()): RunArtifacts {
+        ObjectiveWeightsSource.ensureDefaults()
+        if (!ProblemGuards.isRunnable(problem)) {
+            val empty = Array(0) { IntArray(0) }
+            val rep = runCatching { evaluate(initial) }.getOrElse { ViolationReport.EMPTY }
+            return RunArtifacts(
+                schedule = initial,
+                report = rep,
+                stopReason = StopReason.CANCELLED,
+            )
+        }
+        val shaped = if (ProblemGuards.scheduleShapeOk(problem, initial)) {
+            initial
+        } else {
+            // 形状不正: 休埋めで正規化できる場合のみ。不可なら early return。
+            normalizeShape(problem, initial) ?: run {
+                val rep = runCatching { evaluate(initial) }.getOrElse { ViolationReport.EMPTY }
+                return RunArtifacts(schedule = initial, report = rep, stopReason = StopReason.CANCELLED)
+            }
+        }
         val rng = Random(options.seed)
         val g3 = g3Backend ?: FullyWiredG3Backend(problem, evaluate, better, Random(options.seed xor 0xC3L))
         val fix = fixProvider ?: FocusAwareFixProvider(problem)
         return scheduler.optimize(
-            initial = initial,
-            profile = ScheduleProfile(options.totalBudgetMs, options.postReserveMs),
+            initial = shaped,
+            profile = ScheduleProfile(
+                options.totalBudgetMs.coerceAtLeast(1L),
+                options.postReserveMs.coerceIn(0L, options.totalBudgetMs.coerceAtLeast(1L)),
+            ),
             rng = rng,
             shouldStop = options.shouldStop,
             infeasible = options.infeasibleFamilies,
             g3Backend = g3,
             fixProvider = fix,
             deltaHook = options.deltaHook,
-            workers = options.workers,
+            workers = options.workers.coerceIn(1, 16),
             baseSeed = options.seed,
             nativeProbe = options.nativeProbe,
             progressListener = options.progressListener,
-            fixedItersG1 = options.fixedItersG1,
-            fixedItersG2 = options.fixedItersG2,
-            skipPostProcess = options.skipPostProcess,
         )
+    }
+
+    private fun normalizeShape(problem: Problem, initial: Array<IntArray>): Array<IntArray>? {
+        if (problem.S <= 0 || problem.T <= 0) return null
+        val rest = problem.restIdx.coerceIn(0, (problem.K - 1).coerceAtLeast(0))
+        return Array(problem.S) { s ->
+            IntArray(problem.T) { d ->
+                val row = initial.getOrNull(s)
+                val v = row?.getOrNull(d)
+                if (v != null && v in 0 until problem.K) v else rest
+            }
+        }
     }
 }
