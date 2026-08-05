@@ -77,7 +77,7 @@ class SchedulerService(
 
         // G1: workers==1 → 単一 Session（再現性）。workers>=2 → 独立並列 SA → best を本 session に吸収
         if (workers <= 1) {
-            (problem, session, packedScore).run(
+            G1LocalAnnealer(problem, session, packedScore).run(
                 G1Params(budgetMs = g1Ms, shouldStop = { stopSearch() }, nativeProbe = nativeProbe, maxIters = fixedItersG1),
                 rng,
             )
@@ -116,7 +116,7 @@ class SchedulerService(
         // ALNS + VNS（フォーク元分解・論文近傍）
         if (!stopSearch() && alnsMs > 0L) {
             val alnsDeadline = System.currentTimeMillis() + alnsMs
-            if (!skipPostProcess) AlnsPolish(problem, rng).run(session, alnsDeadline)
+            AlnsPolish(problem, rng).run(session, alnsDeadline)
             g4.considerStrict(session.best, session.bestReport)
             emit("alns")
             if (!stopSearch() && System.currentTimeMillis() < alnsDeadline) {
