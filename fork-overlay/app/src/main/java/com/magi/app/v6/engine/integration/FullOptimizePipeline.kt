@@ -110,9 +110,12 @@ object FullOptimizePipeline {
             if (!com.magi.app.v6.NativeParityGate.assertOrDisable(problem, schedule0, "pipeline-start")) {
                 android.util.Log.w("MAGI", "native disabled after parity fail; Kotlin only")
                 null
-            } else
-            handle = runCatching { NativeEval.createHandle(problem) }.onFailure { android.util.Log.e("MAGI", "NativeEval.createHandle failed", it) }.getOrDefault(0L)
-            if (handle != 0L) NativeBridgeProbe(handle) else null
+            } else {
+                handle = runCatching { NativeEval.createHandle(problem) }.onFailure {
+                    android.util.Log.e("MAGI", "NativeEval.createHandle failed", it)
+                }.getOrDefault(0L)
+                if (handle != 0L) NativeBridgeProbe(handle) else null
+            }
         } else null
 
         val listener = onProgress?.let { cb -> SearchProgressListener { p -> cb(p) } }
