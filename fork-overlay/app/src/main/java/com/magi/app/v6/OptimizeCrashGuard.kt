@@ -1,7 +1,7 @@
 package com.magi.app.v6
 
 import android.util.Log
-import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CancellationException
 
 /**
  * 最適化開始時の強制終了を防ぐ入口ガード。
