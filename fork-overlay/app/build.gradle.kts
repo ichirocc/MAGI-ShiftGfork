@@ -18,13 +18,13 @@ android {
     ndkVersion = "26.1.10909125"
 
     defaultConfig {
-        // REBUILD_ENGINE は buildTypes で上書き（debug=true / release=false）
+        // REBUILD_ENGINE: ShiftGfork は debug/release とも true（上流 V5 SA 経路を使わない）
         buildConfigField("Boolean", "REBUILD_ENGINE", "true")
         applicationId = "com.magi.app"
         minSdk = 36
         targetSdk = 36
-        versionCode = 503
-        versionName = "3.343.0-forbidden-diag-pref-cost"
+        versionCode = 504
+        versionName = "3.344.0-parity-rebuild-lock"
         // [ネイティブ加速] minSdk 36（Android 16+）の実機は arm64 のみ対象で十分。
         //   .so が無い環境でも NativeBridge が false を返し Kotlin パスで全機能が動く。
         ndk { abiFilters += listOf("arm64-v8a") }
