@@ -1011,6 +1011,10 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val phaseNameLastLogMs = HashMap<String, Long>()   // [3.283.0] 同名フェーズの再ログ抑制（60s窓・スパム対策）
         var lastHardLogMs = -10_000L
         optimizeActive = true   // [3.328.0]
+        val safeWorkers = com.magi.app.v6.OptimizeCrashGuard.beforeOptimize(
+            _ui.value.workers,
+            _ui.value.nativeAccel,
+        )
         job = viewModelScope.launch {
             try {
                 // [再実行 keep-best] 実行開始時の入力解(sched0)の違反を評価し、完了時の採用判定の基準にする。
@@ -1027,7 +1031,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                             schedule = sched0.copy2D(),
                             budgetSec = _ui.value.budgetSec,
                             seed = System.currentTimeMillis(),
-                            workers = _ui.value.workers,
+                            workers = safeWorkers,
                             shouldStop = { !optimizeActive },
                             onProgress = { sp ->
                                 _ui.update {
@@ -1048,7 +1052,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                     state = st0,
                     schedule = sched0.copy2D(),
                     secondsRaw = _ui.value.budgetSec,
-                    workers = _ui.value.workers,
+                    workers = safeWorkers,
                     softPolish = _ui.value.softPolish,
                     requestedAlgorithm = _ui.value.v6Algorithm,
                     allowImpossible = true,
