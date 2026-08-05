@@ -54,7 +54,9 @@ class G1LocalAnnealer(
         var nativeHints = 0L
 
         fun timeUp() =
-            params.shouldStop() || (params.maxIters > 0L && iters >= params.maxIters) || (System.nanoTime() / 1_000_000L) - start >= params.budgetMs
+            params.shouldStop() ||
+                (params.maxIters > 0L && iters >= params.maxIters) ||
+                (params.maxIters <= 0L && (System.nanoTime() / 1_000_000L) - start >= params.budgetMs)
 
         while (!timeUp()) {
             iters++
