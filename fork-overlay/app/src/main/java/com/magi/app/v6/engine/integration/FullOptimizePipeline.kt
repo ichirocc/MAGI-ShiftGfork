@@ -63,10 +63,6 @@ object FullOptimizePipeline {
     ): ScheduleRunResult {
         ObjectiveWeightsSource.install(MirrorKeys.hard, MirrorKeys.weights)
         WeightAuditLog.logTable()
-        if (!ProblemGuards.isRunnable(problem)) {
-            val rep = evaluate(scheduleIn)
-            return ScheduleRunResult(schedule = scheduleIn, report = rep, logs = emptyList())
-        }
 
         android.util.Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION ${AppVersion.info.logLine()} engine=rebuild pipeline=FullOptimize")
         val wall0 = System.currentTimeMillis()
@@ -79,6 +75,10 @@ object FullOptimizePipeline {
 
         val schedule0 = ensureInitial(state, scheduleIn, options.generateInitialIfNeeded)
         val problem = Problem(state)
+        if (!ProblemGuards.isRunnable(problem)) {
+            val rep = UnifiedViolationChecker.check(state, scheduleIn)
+            return ScheduleRunResult(schedule = scheduleIn, report = rep)
+        }
         val evaluate: (Array<IntArray>) -> ViolationReport = { sch ->
             UnifiedViolationChecker.check(state, sch)
         }
