@@ -67,7 +67,12 @@ class OptimizationWorker(
         //   化けていた（300秒/8並列で開始したジョブが別条件で再実行される）。inputData は WorkManager が
         //   永続化するため kill/再起動を跨いで開始時の条件が保たれる（0=未設定なら従来どおり Repository）。
         val budgetSec = inputData.getInt(KEY_SECONDS, 0).takeIf { it > 0 } ?: OptimizationRepository.seconds
-        val bgWorkers = inputData.getInt(KEY_WORKERS, 0).takeIf { it > 0 } ?: OptimizationRepository.workers
+        val rawWorkers = inputData.getInt(KEY_WORKERS, 0).takeIf { it > 0 } ?: OptimizationRepository.workers
+        val bgWorkers = com.magi.app.v6.OptimizeCrashGuard.beforeOptimize(
+            rawWorkers,
+            // BG は prefs の nativeAccel（未配線時は true だが SaOptimizer が per-handle）
+            com.magi.app.ui.OptimizeToggleStore.load(ctx).nativeAccel,
+        )
         // [#4] 前景サービス化: 5分のCPUジョブをOSに止めさせない（FGS不可な環境では通常実行へフォールバック）。
         runCatching { setForeground(getForegroundInfo()) }
         // [Android 17 バブル] 会話バブルの前提（会話チャンネル＋長寿命ショートカット）を用意し、開始バブルを提示。
