@@ -46,7 +46,8 @@ object RebuildOptimizeEntry {
         )
         val post = (budgetMs * 0.08).toLong().coerceIn(5_000L, 25_000L)
         val residual = (budgetMs * 0.12).toLong().coerceIn(3_000L, 40_000L)
-        return FullOptimizePipeline.optimize(
+        return try {
+            FullOptimizePipeline.optimize(
             state = state,
             scheduleIn = schedule,
             options = FullOptimizePipeline.Options(
@@ -60,6 +61,16 @@ object RebuildOptimizeEntry {
             ),
             shouldStop = shouldStop,
             onProgress = onProgress,
-        )
+            )
+        } catch (t: Throwable) {
+            android.util.Log.e("MAGI", "RebuildOptimizeEntry crashed", t)
+            val rep = runCatching {
+                com.magi.app.v6.UnifiedViolationChecker.check(state, schedule)
+            }.getOrElse {
+                // minimal empty report if checker also fails
+                throw t
+            }
+            com.magi.app.v6.ScheduleRunResult(schedule = schedule, report = rep)
+        }
     }
 }
