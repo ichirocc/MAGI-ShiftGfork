@@ -60,10 +60,15 @@ class SearchSessionFull(
                     promoteBest(rep)
                 }
             }
-            // ANNEAL: current のみ無条件更新可。best は promoteBest 内で better のときだけ。
+            // ANNEAL: soft 悪化は current のみ許可。HARD 増加は却下（best は promoteBest で better のみ）。
             TransitionMode.ANNEAL -> {
-                commit(rep)
-                promoteBest(rep)
+                if (rep.hard > currentReport.hard) {
+                    revertSnap(snap)
+                    TransitionResult.Rejected(RejectReason.NOT_BETTER)
+                } else {
+                    commit(rep)
+                    promoteBest(rep)
+                }
             }
             // LAHC: 閾値判定は tryLahc 専用。ここ経由は誤用防止のため STRICT 相当。
             TransitionMode.LAHC -> {
@@ -186,7 +191,12 @@ class SearchSessionFull(
             if (old != sh) {
                 fun touch(keySh: Int) {
                     if (keySh !in 0 until problem.K) return
-                    if (nTouch >= touchBuf.size) return
+                    if (nTouch >= touchBuf.size) {
+                    lastReject = TransitionResult.Rejected(RejectReason.INVALID_RANGE)
+                    // タッチバッファ超過は不完全な exact-pin 追跡になるため適用しない
+                    while (i >= 3) { i -= 3; /* will revert below */ }
+                    return null
+                }
                     val key = (s.toLong() shl 32) or (keySh.toLong() and 0xffffffffL)
                     // 重複キーは before を最初の値のままにする
                     var exists = false
