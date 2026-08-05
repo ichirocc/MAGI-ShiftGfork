@@ -38,7 +38,7 @@ object FullOptimizePipeline {
         val postReserveMs: Long = 25_000L,
         val seed: Long = 0L,
         val workers: Int = 1,
-        val autoNative: Boolean = true,
+        val autoNative: Boolean = false,
         val generateInitialIfNeeded: Boolean = true,
         val hardResidualMs: Long = 40_000L,
     )
@@ -75,8 +75,11 @@ object FullOptimizePipeline {
 
         val schedule0 = ensureInitial(state, scheduleIn, options.generateInitialIfNeeded)
         val problem = Problem(state)
-        if (!ProblemGuards.isRunnable(problem)) {
-            val rep = UnifiedViolationChecker.check(state, scheduleIn)
+        if (!ProblemGuards.isRunnable(problem) || !ProblemGuards.scheduleShapeOk(problem, schedule0)) {
+            android.util.Log.e("MAGI", "FullOptimizePipeline: problem/schedule not runnable")
+            val rep = runCatching { evaluate(schedule0) }.getOrElse {
+                runCatching { UnifiedViolationChecker.check(state, scheduleIn) }.getOrElse { evaluate(scheduleIn) }
+            }
             return ScheduleRunResult(schedule = scheduleIn, report = rep)
         }
         val evaluate: (Array<IntArray>) -> ViolationReport = { sch ->
@@ -100,7 +103,7 @@ object FullOptimizePipeline {
 
         var handle = 0L
         val probe: NativeWritesProbe? = if (options.autoNative && NativeBridge.available) {
-            handle = runCatching { NativeEval.createHandle(problem) }.getOrDefault(0L)
+            handle = runCatching { NativeEval.createHandle(problem) }.onFailure { android.util.Log.e("MAGI", "NativeEval.createHandle failed", it) }.getOrDefault(0L)
             if (handle != 0L) NativeBridgeProbe(handle) else null
         } else null
 
