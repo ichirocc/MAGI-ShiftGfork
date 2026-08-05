@@ -27,7 +27,10 @@ class SimpleRsi(
     private val hardPrefer = setOf("groupViol", "c3n", "covU", "pref", "covO", "c2")
 
     fun run(params: Params, rng: Random): Long {
-        val deadline = System.currentTimeMillis() + params.budgetMs
+        if (!ProblemGuards.isRunnable(problem)) return 0L
+        if (params.budgetMs <= 0L && params.maxIters <= 0L) return 0L
+        val failRotate = failRotate.coerceAtLeast(1)
+        val deadline = System.currentTimeMillis() + params.budgetMs.coerceAtLeast(0L)
         var iters = 0L
         var focus = pickFocus(session.currentReport, params.infeasible) ?: return 0L
         var fails = 0
@@ -37,7 +40,7 @@ class SimpleRsi(
             val move = fixProvider.propose(focus, session, problem, rng)
             if (move == null) {
                 fails++
-                if (fails >= params.failRotate) {
+                if (fails >= failRotate) {
                     focus = pickFocus(session.currentReport, params.infeasible + focus) ?: return iters
                     fails = 0
                 }
@@ -51,7 +54,7 @@ class SimpleRsi(
                 val after = familyCount(session.currentReport, focus)
                 fails = if (after >= before) fails + 1 else 0
             }
-            if (fails >= params.failRotate) {
+            if (fails >= failRotate) {
                 focus = pickFocus(session.currentReport, params.infeasible + setOf(focus))
                     ?: pickFocus(session.currentReport, params.infeasible)
                     ?: return iters
