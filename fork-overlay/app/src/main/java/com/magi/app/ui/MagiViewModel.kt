@@ -1011,6 +1011,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val phaseNameLastLogMs = HashMap<String, Long>()   // [3.283.0] 同名フェーズの再ログ抑制（60s窓・スパム対策）
         var lastHardLogMs = -10_000L
         optimizeActive = true   // [3.328.0]
+        RebuildOptimizeEntry.enabled = true  // release でも上流 V5 SA を選ばない
         val safeWorkers = com.magi.app.v6.OptimizeCrashGuard.beforeOptimize(
             _ui.value.workers,
             _ui.value.nativeAccel,
