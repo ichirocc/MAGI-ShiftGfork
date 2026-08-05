@@ -84,6 +84,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         RebuildOptimizeEntry.applyBuildConfigDefault()
+        RebuildOptimizeEntry.enabled = true
     }
 
     private val _ui = MutableStateFlow(UiState())
