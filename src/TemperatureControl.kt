@@ -49,7 +49,7 @@ enum class SearchPhase {
 object Metropolis {
     fun accept(delta: Double, temperature: Double, rng: Random): Boolean {
         if (delta <= 0.0) return true
-        if (temperature <= 1e-12) return false
+        if (temperature <= 0.0 || temperature.isNaN()) return false
         val p = exp(-delta / temperature)
         return rng.nextDouble() < p
     }
