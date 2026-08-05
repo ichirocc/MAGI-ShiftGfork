@@ -54,7 +54,7 @@ class MainOptimizeBridge(
         ObjectiveWeightsSource.ensureDefaults()
         WeightAuditLog.logTable()
         if (!ProblemGuards.isRunnable(problem)) {
-            val rep = runCatching { evaluate(initial) }.getOrElse { com.magi.app.v6.ViolationReport.EMPTY }
+            val rep = evaluate(initial)
             return com.magi.app.v6.engine.RunArtifacts(schedule = initial, report = rep)
         }
         val facade = EngineFacade(
