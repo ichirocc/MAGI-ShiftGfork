@@ -40,7 +40,7 @@ object OptimizeCrashGuard {
     }
 
     /** 最適化全体を包む。Error 含む Throwable を捕捉し Result 化しない呼び出し側向け。 */
-    inline fun <T> runCatchingFatal(label: String, fallback: () -> T, block: () -> T): T {
+    fun <T> runCatchingFatal(label: String, fallback: () -> T, block: () -> T): T {
         return try {
             block()
         } catch (e: CancellationException) {
