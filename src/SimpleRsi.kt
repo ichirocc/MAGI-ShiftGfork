@@ -29,7 +29,7 @@ class SimpleRsi(
     fun run(params: Params, rng: Random): Long {
         if (!ProblemGuards.isRunnable(problem)) return 0L
         if (params.budgetMs <= 0L && params.maxIters <= 0L) return 0L
-        val failRotate = failRotate.coerceAtLeast(1)
+        val failRotate = params.failRotate.coerceAtLeast(1)
         val deadline = System.currentTimeMillis() + params.budgetMs.coerceAtLeast(0L)
         var iters = 0L
         var focus = pickFocus(session.currentReport, params.infeasible) ?: return 0L
