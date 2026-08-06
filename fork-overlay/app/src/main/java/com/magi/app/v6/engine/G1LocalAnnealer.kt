@@ -7,7 +7,9 @@ import com.magi.app.v6.MirrorLog
 import com.magi.app.v6.Problem
 import com.magi.app.v6.ViolationReport
 
+import com.magi.app.v6.engine.nativex.NativeBridgeProbe
 import com.magi.app.v6.engine.nativex.NativeWritesProbe
+import com.magi.app.v6.engine.nativex.ScheduleFlat
 import com.magi.app.v6.engine.nativex.nativePrefilter
 import java.util.Random
 
@@ -65,11 +67,36 @@ class G1LocalAnnealer(
 
             when (ctrl.phase) {
                 SearchPhase.ANNEAL -> {
-                    if (params.nativeProbe != null) {
+                    // C++ 差分スコアで明らかに悪化かつ低温なら Kotlin フル評価をスキップ
+                    var skipKotlin = false
+                    val probe = params.nativeProbe
+                    if (probe is NativeBridgeProbe) {
+                        val flat = ScheduleFlat.flatten(session.current)
+                        val d = probe.deltaScore(flat, move.writes)
+                        if (d != null) {
+                            nativeHints++
+                            val before = packedScore(session.currentReport)
+                            // hard が増える案は温度に関係なく却下（Session と同じ契約）
+                            if (d.hardAfter > session.currentReport.hard) {
+                                skipKotlin = true
+                            } else if (d.afterPacked > before && ctrl.temperature < 0.05) {
+                                // 極低温では悪化をほぼ受けない → 早期棄却
+                                skipKotlin = true
+                            }
+                        }
+                    } else if (probe != null) {
                         val pre = session.nativePrefilter(
-                            move, TransitionMode.ANNEAL, params.nativeProbe, ctrl.temperature,
+                            move, TransitionMode.ANNEAL, probe, ctrl.temperature,
                         )
                         if (pre.status > 0) nativeHints++
+                    }
+                    if (skipKotlin) {
+                        ctrl.onTrial(
+                            accepted = false,
+                            bestScore = packedScore(session.bestReport),
+                            bestHard = session.bestReport.hard,
+                        )
+                        continue
                     }
                     val r = session.tryMetropolis(move, ctrl.temperature, rng, packedScore)
                     val accepted = r !is TransitionResult.Rejected
@@ -111,6 +138,9 @@ class G1LocalAnnealer(
                     }
                 }
             }
+        }
+        if (nativeHints > 0L) {
+            android.util.Log.i("MAGI_DELTA", "G1 nativeHints=$nativeHints iters=$iters")
         }
         return iters
     }
