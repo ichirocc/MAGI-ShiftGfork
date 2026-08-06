@@ -80,7 +80,7 @@ class OptimizationWorker(
             BubbleSupport.ensureChannel(ctx)
             BubbleSupport.pushShortcut(ctx)
             val verW = runCatching { com.magi.app.v6.engine.AppVersion.info.compact() }.getOrDefault("?")
-            BubbleSupport.postProgress(ctx, "最適化開始 版=$verW 予算${budgetSec}s 並列$workers")
+            BubbleSupport.postProgress(ctx, "最適化開始 版=$verW 予算${budgetSec}s 並列$bgWorkers")
         }
         // [3.333.0/外部レビュー] 成功パスは所有権マーカー(runIdFile)を**自分で消してから** finally へ入る。
         //   finally が `ownsFiles()` をファイルから読み直すと「所有者でない」と判定され、
