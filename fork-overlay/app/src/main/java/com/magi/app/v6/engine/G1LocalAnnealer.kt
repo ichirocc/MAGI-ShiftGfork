@@ -37,6 +37,10 @@ data class G1Params(
      * 速度優先の実験時のみ true。
      */
     val earlyRejectColdWorse: Boolean = false,
+    /** 進捗ハートビート（UI の 0回固着防止）。(iters, bestReport) */
+    val onProgressTick: ((Long, ViolationReport) -> Unit)? = null,
+    /** ハートビート間隔 ms */
+    val progressEveryMs: Long = 1500L,
 )
 
 /**
@@ -78,8 +82,14 @@ class G1LocalAnnealer(
                 (params.maxIters > 0L && iters >= params.maxIters) ||
                 (params.maxIters <= 0L && (System.nanoTime() / 1_000_000L) - start >= params.budgetMs)
 
+        var lastTickMs = start
         while (!timeUp()) {
             iters++
+            val nowMs = System.nanoTime() / 1_000_000L
+            if (params.onProgressTick != null && nowMs - lastTickMs >= params.progressEveryMs) {
+                lastTickMs = nowMs
+                runCatching { params.onProgressTick.invoke(iters, session.bestReport) }
+            }
             val move = propose(rng) ?: continue
             val bestBefore = packedScore(session.bestReport)
 
@@ -160,6 +170,7 @@ class G1LocalAnnealer(
                 }
             }
         }
+        runCatching { params.onProgressTick?.invoke(iters, session.bestReport) }
         android.util.Log.i(
             "MAGI_DELTA",
             "G1 iters=$iters deltaOk=$nativeDeltaOk earlyReject=$nativeEarlyReject acceptHint=$nativeAcceptHint " +
