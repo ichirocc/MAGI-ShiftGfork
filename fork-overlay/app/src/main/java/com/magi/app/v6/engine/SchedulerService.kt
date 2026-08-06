@@ -113,7 +113,20 @@ class SchedulerService(
                 budgetMs = g1Ms,
                 baseSeed = if (baseSeed != 0L) baseSeed else rng.nextLong(),
                 shouldStop = { stopSearch() },
+                onProgress = { it, rep ->
+                    g1Iters = it
+                    progressListener?.onProgress(
+                        SearchProgress(
+                            phase = "g1-parallel",
+                            report = rep,
+                            iters = it,
+                            elapsedMs = System.currentTimeMillis() - started,
+                            schedule = null,
+                        ),
+                    )
+                },
             )
+            g1Iters = par.totalIters
             session.replaceBestIfBetter(par.schedule, par.report)
         }
         g4.considerStrict(session.best, session.bestReport)
