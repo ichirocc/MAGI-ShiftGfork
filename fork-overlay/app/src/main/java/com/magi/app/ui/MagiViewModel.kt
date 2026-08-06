@@ -999,7 +999,18 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         else null
         lastSettingsSig = sig
         _ui.update { it.copy(running = true, hasResult = false, copilotHint = hint, alternatives = emptyList(), liveSchedule = emptyList(), interruptedRun = false, interruptedInfo = null, message = "計算エンジン実行中…") }
-        logOp("I", "最適化 開始 (予算${_ui.value.budgetSec}s, 並列${_ui.value.workers}, 方式${_ui.value.v6Algorithm})")
+        // 操作ログ強化: 方式・予算に加え version / エンジン / native / トグルを1行に
+        val ver = runCatching { com.magi.app.v6.engine.AppVersion.info.compact() }.getOrDefault("?")
+        val eng = if (com.magi.app.v6.engine.integration.RebuildOptimizeEntry.enabled) "rebuild" else "upstream"
+        val nativeOn = _ui.value.nativeAccel && com.magi.app.v6.NativeBridge.available
+        val gateOk = com.magi.app.v6.NativeGate.usable
+        logOp(
+            "I",
+            "最適化 開始 版=$ver エンジン=$eng 方式=${_ui.value.v6Algorithm} " +
+                "予算${_ui.value.budgetSec}s 並列${_ui.value.workers} " +
+                "native=${if (nativeOn) "on" else "off"} gate=${if (gateOk) "ok" else "off"} " +
+                "仕上げ=${_ui.value.softPolish}",
+        )
         writeRunMarker("fg")
         OptimizationWorker.clearFiles(getApplication<Application>())   // [C1] fg実行ではbg途中状態は無関係＝掃除
         val startMs = System.currentTimeMillis()
