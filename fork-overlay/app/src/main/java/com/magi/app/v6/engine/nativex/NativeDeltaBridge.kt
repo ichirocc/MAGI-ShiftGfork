@@ -21,8 +21,11 @@ object NativeDeltaBridge {
         val hardAfter: Int,
         val softAfter: Long,
     ) {
+        /** before も同一 packed 系（Evaluator/C++）。Checker.report.hard と比較しないこと。 */
+        val hardBefore: Int get() = (beforePacked / SCORE_HARD_UNIT).toInt()
         val improved: Boolean get() = afterPacked < beforePacked
-        val hardImproved: Boolean get() = hardAfter < (beforePacked / SCORE_HARD_UNIT).toInt()
+        val hardIncreased: Boolean get() = hardAfter > hardBefore
+        val hardImproved: Boolean get() = hardAfter < hardBefore
     }
 
     fun scoreAfterWrites(
@@ -37,11 +40,12 @@ object NativeDeltaBridge {
         }.getOrNull() ?: return null
         if (r.size < 4 || r[0] != 1L) return null
         val after = r[2]
+        // r: [ok, beforePacked, afterPacked, softAfter]
         return DeltaScore(
             beforePacked = r[1],
             afterPacked = after,
             hardAfter = (after / SCORE_HARD_UNIT).toInt(),
-            softAfter = after % SCORE_HARD_UNIT,
+            softAfter = if (r.size > 3) r[3] else (after % SCORE_HARD_UNIT),
         )
     }
 
