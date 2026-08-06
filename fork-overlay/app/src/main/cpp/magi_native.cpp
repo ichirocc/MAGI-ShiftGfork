@@ -2357,11 +2357,7 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
             return out;
         };
         if (mode == 0 && verify >= before) return reject();
-        if (mode == 1 && verify > before) {
-            double delta = (double)(verify - before);
-            double thr = std::exp(-delta / (temp > 1e-12 ? temp : 1e-12));
-            if (thr < 0.5) return reject();
-        }
+        if (mode == 1 && verify / 1000000000LL > before / 1000000000LL) return reject();
         if (mode == 2 && verify > before) return reject();
         env->SetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(a.data()));
         jlong ok[4] = { verify < before ? 2 : 1, (jlong)verify, (jlong)parts[0], (jlong)parts[1] };
@@ -2377,14 +2373,15 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
         env->SetLongArrayRegion(out, 0, 4, z);
         return out;
     };
+    // mode: 0 STRICT / 1 ANNEAL / 2 LAHC
+    // プローブ用途: 悪化案は reject。Metropolis 乱数は Kotlin Session 側のみ（ここは決定的）。
+    // 旧: ANNEAL で exp(-Δ/T)<0.5 の決定的閾値 → 温度と無関係に約半分を落とし品質を歪める。
     if (mode == 0) {
         if (after >= before) return reject();
     } else if (mode == 1) {
-        if (after > before) {
-            double delta = (double)(after - before);
-            double thr = std::exp(-delta / (temp > 1e-12 ? temp : 1e-12));
-            if (thr < 0.5) return reject();
-        }
+        // hard 増加は不可。soft 悪化は Kotlin Metropolis に委ねるため accept_hint(1) を返す。
+        if (after / 1000000000LL > before / 1000000000LL) return reject();
+        // after<=before → improve/equal; after>before かつ hard 同値 → hint accept で Kotlin が温度判定
     } else {
         if (after > before) return reject();
     }
