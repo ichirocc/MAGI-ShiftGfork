@@ -34,6 +34,8 @@ object NativeParityGate {
         Log.e(TAG, msg)
         NativeGate.disable(msg)
         NativeGate.userEnabled = false
+        // 棲み分け: 不一致時は数値ホットパスも Kotlin へ全面退化
+        NativeFullEval.detach()
         return false
     }
 
@@ -49,6 +51,8 @@ object NativeParityGate {
         Log.e(TAG, msg)
         NativeGate.disable(msg)
         NativeGate.userEnabled = false
+        // 棲み分け: 不一致時は数値ホットパスも Kotlin へ全面退化
+        NativeFullEval.detach()
         return false
     }
 }
