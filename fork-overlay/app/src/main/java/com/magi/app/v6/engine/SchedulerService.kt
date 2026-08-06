@@ -131,6 +131,31 @@ class SchedulerService(
             )
             g1Iters = par.totalIters
             session.replaceBestIfBetter(par.schedule, par.report)
+            // 並列は Kotlin のみ。マージ後に単一スレッドで native 加速（安全）
+            if (nativeProbe != null && !stopSearch()) {
+                val refineMs = minOf(8_000L, (g1Ms / 8L).coerceAtLeast(2_000L))
+                android.util.Log.i("MAGI", "ParallelSa merge → single-thread native refine ${refineMs}ms")
+                val refined = G1LocalAnnealer(problem, session, packedScore).run(
+                    G1Params(
+                        budgetMs = refineMs,
+                        shouldStop = { stopSearch() },
+                        nativeProbe = nativeProbe,
+                        earlyRejectHardIncrease = true,
+                        earlyRejectColdWorse = false,
+                    ),
+                    rng,
+                )
+                g1Iters += refined
+                progressListener?.onProgress(
+                    SearchProgress(
+                        phase = "g1-native-refine",
+                        report = session.bestReport,
+                        iters = g1Iters,
+                        elapsedMs = System.currentTimeMillis() - started,
+                        schedule = null,
+                    ),
+                )
+            }
         }
         g4.considerStrict(session.best, session.bestReport)
         emit("g1", iters = g1Iters)
