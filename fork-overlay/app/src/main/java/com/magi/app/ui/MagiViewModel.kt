@@ -301,7 +301,12 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             .enqueueUniqueWork(OptimizationWorker.UNIQUE, androidx.work.ExistingWorkPolicy.REPLACE, work)
         _ui.update { it.copy(running = true, hasResult = false, interruptedRun = false, interruptedInfo = null, message = "バックグラウンドで最適化を開始しました（完了時に通知）") }
         writeRunMarker("bg")
-        logOp("I", "バックグラウンド最適化 開始 (予算${_ui.value.budgetSec}s, 並列${_ui.value.workers})")
+        val verBg = runCatching { com.magi.app.v6.engine.AppVersion.info.compact() }.getOrDefault("?")
+        logOp(
+            "I",
+            "バックグラウンド最適化 開始 版=$verBg 予算${_ui.value.budgetSec}s 並列${_ui.value.workers} " +
+                "native=${if (_ui.value.nativeAccel) "on" else "off"}",
+        )
     }
 
     private suspend fun applyBgResult(r: OptimizationRepository.BgResult) {
@@ -1034,6 +1039,12 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                 // [再実行 keep-best] 実行開始時の入力解(sched0)の違反を評価し、完了時の採用判定の基準にする。
                 //   sched0 はデータ編集直後なら新データの初期解なので、編集をまたいでも公平な基準になる。
                 val baseReport = withContext(Dispatchers.Default) { UnifiedViolationChecker.check(st0, sched0) }
+                logOp(
+                    "I",
+                    "入力基準 必須=${baseReport.hard} 合計=${baseReport.total} " +
+                        "重み付=${"%.1f".format(baseReport.weightedScore)} " +
+                        (topHardFamilyJp(baseReport.breakdown)?.let { "最大族=$it" } ?: ""),
+                )
                 // [一括修正] 「必須違反 残りN件 に改善」の基準を入力盤面の必須数でシード。旧: Long.MAX_VALUE 始まりの
                 //   ため、探索シードが入力より悪い局面(例: 入力1→シード2)でも最初の報告を「改善」と表示していた。
                 liveHard = baseReport.hard.toLong()
@@ -1120,7 +1131,10 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                         //   null 判定へ是正（初出は常にログ・以後は60秒窓）。
                         val lastForName = phaseNameLastLogMs[nameKey]
                         if (important || lastForName == null || wallElapsed - lastForName >= 60_000) {
-                            logOp("I", "探索フェーズ: $base（経過${wallElapsed / 1000}秒）")
+                            logOp(
+                                "I",
+                                "探索フェーズ: $base 必須=${rep.hard} 合計=${rep.total}（経過${wallElapsed / 1000}秒）",
+                            )
                             phaseNameLastLogMs[nameKey] = wallElapsed
                             lastPhaseLogMs = wallElapsed
                         }
@@ -1181,7 +1195,31 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 lastC1Plateau?.logLines()?.take(4)?.forEach { logOp("W", it.removePrefix("[W] ")) }
                 lastTopHardFamily = if (res.report.hard > 0) topHardFamilyJp(res.report.breakdown) else null
-                logOp(if (res.report.hard == 0) "I" else "W", "最適化 完了 必須=${res.report.hard} 合計=${res.report.total} (${res.phase})")
+                val elapsedSec = (System.currentTimeMillis() - startMs) / 1000L
+                val dHard = baseReport.hard - res.report.hard
+                val dTotal = baseReport.total - res.report.total
+                logOp(
+                    if (res.report.hard == 0) "I" else "W",
+                    "最適化 完了 必須=${res.report.hard}(Δ${if (dHard >= 0) "-$dHard" else "+${-dHard}"}) " +
+                        "合計=${res.report.total}(Δ${if (dTotal >= 0) "-$dTotal" else "+${-dTotal}"}) " +
+                        "重み付=${"%.1f".format(res.report.weightedScore)} " +
+                        "相=${res.phase} 経過${elapsedSec}s " +
+                        "native=${if (com.magi.app.v6.NativeGate.usable) "ok" else "off"}",
+                )
+                // BENCH / FULL / DELTA の要約を操作ログへ（最大6行）
+                runCatching {
+                    com.magi.app.v6.engine.OptimizeBenchLog.drainMirrorLogs()
+                        .takeLast(6)
+                        .forEach { ml -> logOp("I", ml.message.take(160)) }
+                }
+                runCatching {
+                    val full = com.magi.app.v6.NativeFullEval.stats()
+                    if (full.contains("nativeHits")) logOp("I", "C++フル評価 $full")
+                }
+                runCatching {
+                    val parity = com.magi.app.v6.NativeParityGate.lastMismatch
+                    if (parity != null) logOp("W", "パリティ不一致 $parity")
+                }
                 // HF63 検出: 50秒改善のない制約族＝データ上満たせない可能性が高い（業務担当者へ提示）。
                 // [実機ログ起因] 探索中の一時盤面でしか違反が無かった族（最終盤面で0）は「充足できている」ので
                 //   警告から除外する（旧: 破棄された探索トラックの covO/LimMax まで列挙され誤解を招いた）。
