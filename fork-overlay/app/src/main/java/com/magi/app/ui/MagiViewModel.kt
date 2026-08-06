@@ -1131,9 +1131,11 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                         //   null 判定へ是正（初出は常にログ・以後は60秒窓）。
                         val lastForName = phaseNameLastLogMs[nameKey]
                         if (important || lastForName == null || wallElapsed - lastForName >= 60_000) {
+                            val hardTxt = rep?.hard?.toString() ?: "-"
+                            val totalTxt = rep?.total?.toString() ?: "-"
                             logOp(
                                 "I",
-                                "探索フェーズ: $base 必須=${rep.hard} 合計=${rep.total}（経過${wallElapsed / 1000}秒）",
+                                "探索フェーズ: $base 必須=$hardTxt 合計=$totalTxt（経過${wallElapsed / 1000}秒）",
                             )
                             phaseNameLastLogMs[nameKey] = wallElapsed
                             lastPhaseLogMs = wallElapsed
