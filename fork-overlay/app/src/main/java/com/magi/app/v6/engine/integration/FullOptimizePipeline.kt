@@ -159,6 +159,12 @@ object FullOptimizePipeline {
                 requireWeights = true,
             )
 
+            // 並列時はグローバル NativeFullEval を外す（handle 競合・SIGSEGV 防止）
+            val parallel = options.workers > 1
+            if (parallel) {
+                com.magi.app.v6.NativeFullEval.detach()
+                android.util.Log.i("MAGI", "NativeFullEval detached for parallel workers=${options.workers}")
+            }
             var art = bridge.optimize(
                 initial = schedule0,
                 totalBudgetMs = options.budgetMs,
@@ -166,6 +172,9 @@ object FullOptimizePipeline {
                 seed = baseSeed,
                 shouldStop = shouldStop,
             )
+            if (parallel && fullEvalHandle != 0L && com.magi.app.v6.NativeGate.usable) {
+                com.magi.app.v6.NativeFullEval.attach(fullEvalHandle)
+            }
             OptimizeBenchLog.phase(
                 engine = OptimizeBenchLog.ENGINE_REBUILD,
                 phase = "pipeline",
