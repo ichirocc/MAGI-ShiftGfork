@@ -45,6 +45,11 @@ object NativeFullEval {
         val flat = NativeEval.flatten(schedule)
         val r = runCatching { NativeBridge.nativeFullEval(h, flat) }.getOrNull() ?: return null
         if (r.size < 2 || r[0] < 0L) return null
+        // 辞書式パック契約: soft が桁を超えたら信用せず Kotlin へ
+        if (r[1] < 0L || r[1] >= com.magi.app.v6.SCORE_HARD_UNIT) {
+            Log.w(TAG, "native soft out of range soft=${r[1]} → kotlin fallback")
+            return null
+        }
         nativeHits.incrementAndGet()
         return longArrayOf(r[0], r[1])
     }
