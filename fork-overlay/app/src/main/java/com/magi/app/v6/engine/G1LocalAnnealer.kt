@@ -42,6 +42,10 @@ data class G1Params(
 /**
  * G1: SA（完成温度管理）→ hard==0 で LAHC。
  * 受理は必ず tryMetropolis / tryLahc（version は却下時不変）。
+ *
+ * Native 差分早期棄却:
+ * - hard 増加のみ既定でスキップ（Metropolis と同契約 → 品質不変・速度のみ改善）
+ * - 低温 packed 悪化スキップは既定 OFF（仮想 A/B で soft 悪化を確認）
  */
 class G1LocalAnnealer(
     private val problem: Problem,
