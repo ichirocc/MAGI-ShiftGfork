@@ -21,10 +21,22 @@ data class G1Params(
     /** 再加熱時に小さな perturb を挟む */
     val reheatPerturbCells: Int = 4,
     val shouldStop: () -> Boolean = { false },
-    /** 任意: Native tryWrites プローブ（番兵は Session） */
+    /** 任意: Native tryWrites / delta プローブ（番兵は Session） */
     val nativeProbe: NativeWritesProbe? = null,
     /** >0 なら時間ではなく反復上限で停止（再現テスト用） */
     val maxIters: Long = 0L,
+    /**
+     * C++ 差分で hard 増加が分かった手は Kotlin フル評価前に棄却する。
+     * Session.tryMetropolis と同じ契約（HARD 増は温度無関係に却下）なので品質を落とさない。
+     * 仮想 A/B でも安全側。既定 ON。
+     */
+    val earlyRejectHardIncrease: Boolean = true,
+    /**
+     * 極低温かつ packed 悪化の早期棄却。
+     * 仮想 A/B（10×31 合成）では soft が悪化する傾向（worse 3 / better 1）のため **既定 OFF**。
+     * 速度優先の実験時のみ true。
+     */
+    val earlyRejectColdWorse: Boolean = false,
 )
 
 /**
@@ -144,7 +156,9 @@ class G1LocalAnnealer(
         }
         android.util.Log.i(
             "MAGI_DELTA",
-            "G1 iters=$iters deltaOk=$nativeDeltaOk earlyReject=$nativeEarlyReject acceptHint=$nativeAcceptHint usable=${com.magi.app.v6.NativeGate.usable}",
+            "G1 iters=$iters deltaOk=$nativeDeltaOk earlyReject=$nativeEarlyReject acceptHint=$nativeAcceptHint " +
+                "hardOnly=${params.earlyRejectHardIncrease} coldWorse=${params.earlyRejectColdWorse} " +
+                "usable=${com.magi.app.v6.NativeGate.usable}",
         )
         return iters
     }
