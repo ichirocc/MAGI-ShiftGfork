@@ -24,7 +24,8 @@ object OptimizeCrashGuard {
     fun beforeOptimize(workers: Int, nativeUserPref: Boolean): Int {
         val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         var w = workers.coerceIn(1, cores.coerceAtMost(8))
-        val maxPar = 4
+        // ParallelSa がワーカー専用 handle を持つので並列 native を許可。上限はコア数と 8。
+        val maxPar = 8
         if (w > maxPar) {
             Log.w(TAG, "OptimizeCrashGuard: workers $w → $maxPar")
             w = maxPar
@@ -32,17 +33,15 @@ object OptimizeCrashGuard {
 
         NativeGate.userEnabled = nativeUserPref && NativeBridge.available
 
-        // 根本: 並列時は native を使わない（共有 handle / Checker 競合の根を断つ）
-        if (w > 1) {
-            NativeGate.userEnabled = false
-            Log.i(TAG, "OptimizeCrashGuard: workers=$w>1 → native OFF (Kotlin parallel only)")
-        }
-
         if (!NativeBridge.available) {
             NativeGate.userEnabled = false
             Log.i(TAG, "OptimizeCrashGuard: native .so なし → Kotlin のみ workers=$w")
         } else {
-            Log.i(TAG, "OptimizeCrashGuard: workers=$w cores=$cores nativeUser=$nativeUserPref usable=${NativeGate.usable}")
+            Log.i(
+                TAG,
+                "OptimizeCrashGuard: workers=$w cores=$cores nativeUser=$nativeUserPref " +
+                    "usable=${NativeGate.usable} (parallel uses per-worker handles)",
+            )
         }
         return w
     }
