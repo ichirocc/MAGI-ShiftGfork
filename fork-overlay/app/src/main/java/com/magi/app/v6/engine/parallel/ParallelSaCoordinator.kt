@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 並列 SA: ワーカー独立 Session、共有は betterReport による Elite CAS のみ。
- * Native handle 共有はしない。
+ * Native handle は共有しない。進捗は [onProgress]（約1.5秒）で UI へ。
  */
 data class ParallelSaResult(
     val schedule: Array<IntArray>,
@@ -47,7 +47,8 @@ class ParallelSaCoordinator(
         onProgress: ((iters: Long, best: ViolationReport) -> Unit)? = null,
     ): ParallelSaResult {
         val n = workers.coerceIn(1, 16)
-        val deadline = System.currentTimeMillis() + budgetMs
+        val wall0 = System.currentTimeMillis()
+        val deadline = wall0 + budgetMs
         val stop = AtomicBoolean(false)
         val sharedIters = AtomicLong(0L)
         val elite = AtomicReference(
@@ -61,24 +62,45 @@ class ParallelSaCoordinator(
                     workerLoop(w, seed, initial, deadline, stop, shouldStop, elite, sharedIters)
                 })
             }
+            // ハートビート（探索スレッド側）。例外で本体を落とさない。
             while (futures.any { !it.isDone }) {
-                if (shouldStop()) { stop.set(true); break }
-                onProgress?.invoke(sharedIters.get(), elite.get().report)
-                try { Thread.sleep(1500L) } catch (_: InterruptedException) { stop.set(true); break }
+                if (shouldStop()) {
+                    stop.set(true)
+                    break
+                }
+                runCatching {
+                    onProgress?.invoke(sharedIters.get(), elite.get().report)
+                }
+                try {
+                    Thread.sleep(1500L)
+                } catch (_: InterruptedException) {
+                    stop.set(true)
+                    Thread.currentThread().interrupt()
+                    break
+                }
             }
+            stop.set(true)
             var totalIters = 0L
             val reports = ArrayList<ViolationReport>(n)
             for (f in futures) {
-                val (iters, rep) = f.get(budgetMs + 10_000L, TimeUnit.MILLISECONDS)
-                totalIters += iters
-                reports += rep
+                val waitMs = (deadline - System.currentTimeMillis() + 20_000L).coerceAtLeast(5_000L)
+                val pair = runCatching {
+                    f.get(waitMs, TimeUnit.MILLISECONDS)
+                }.getOrElse { ex ->
+                    android.util.Log.w("MAGI", "ParallelSa worker get: ${ex.javaClass.simpleName}: ${ex.message}")
+                    0L to elite.get().report
+                }
+                totalIters += pair.first
+                reports += pair.second
             }
             val e = elite.get()
+            val finalIters = totalIters.coerceAtLeast(sharedIters.get())
+            runCatching { onProgress?.invoke(finalIters, e.report) }
             return ParallelSaResult(
                 schedule = e.schedule,
                 report = e.report,
                 workerBestReports = reports,
-                totalIters = totalIters.coerceAtLeast(sharedIters.get()),
+                totalIters = finalIters,
                 stopReason = when {
                     shouldStop() -> StopReason.CANCELLED
                     else -> StopReason.DEADLINE
@@ -87,6 +109,7 @@ class ParallelSaCoordinator(
         } finally {
             stop.set(true)
             pool.shutdownNow()
+            runCatching { pool.awaitTermination(3, TimeUnit.SECONDS) }
         }
     }
 
@@ -100,33 +123,38 @@ class ParallelSaCoordinator(
         elite: AtomicReference<Elite>,
         sharedIters: AtomicLong,
     ): Pair<Long, ViolationReport> {
-        val rng = Random(seed)
-        val session = SearchSessionFull(
-            problem,
-            SearchSessionFull.deepCopy(initial),
-            evaluate,
-            better,
-            deltaHook = deltaHook,
-        )
-        val g1 = G1LocalAnnealer(problem, session)
-        var totalIters = 0L
-        val sliceMs = 2_500L
-        while (!stop.get() && !shouldStop() && System.currentTimeMillis() < deadline) {
-            val remain = deadline - System.currentTimeMillis()
-            if (remain <= 0) break
-            val budget = minOf(sliceMs, remain)
-            val iters = g1.run(
-                G1Params(
-                    budgetMs = budget,
-                    shouldStop = { stop.get() || shouldStop() },
-                ),
-                rng,
+        return try {
+            val rng = Random(seed)
+            val session = SearchSessionFull(
+                problem,
+                SearchSessionFull.deepCopy(initial),
+                evaluate,
+                better,
+                deltaHook = deltaHook,
             )
-            totalIters += iters
-            sharedIters.addAndGet(iters)
-            publishElite(elite, session.best, session.bestReport)
+            val g1 = G1LocalAnnealer(problem, session)
+            var totalIters = 0L
+            val sliceMs = 2_500L
+            while (!stop.get() && !shouldStop() && System.currentTimeMillis() < deadline) {
+                val remain = deadline - System.currentTimeMillis()
+                if (remain <= 0L) break
+                val budget = minOf(sliceMs, remain)
+                val iters = g1.run(
+                    G1Params(
+                        budgetMs = budget,
+                        shouldStop = { stop.get() || shouldStop() },
+                    ),
+                    rng,
+                )
+                totalIters += iters
+                sharedIters.addAndGet(iters)
+                publishElite(elite, session.best, session.bestReport)
+            }
+            totalIters to session.bestReport
+        } catch (t: Throwable) {
+            android.util.Log.e("MAGI", "ParallelSa worker-$workerId crashed: ${t.javaClass.simpleName}", t)
+            0L to elite.get().report
         }
-        return totalIters to session.bestReport
     }
 
     private fun publishElite(
