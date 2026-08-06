@@ -1,5 +1,7 @@
 package com.magi.app.v6.engine
 
+import com.magi.app.v6.engine.nativex.GlobalNativeSkipGate
+
 // WeightAuditLog in same package
 
 
@@ -103,7 +105,8 @@ class SchedulerService(
         val rsiMs = (g2Ms * 0.55).toLong().coerceAtLeast(1L)
         val alnsMs = (g2Ms - rsiMs).coerceAtLeast(1L)
         if (skipPostProcess) {
-            return session.snapshotBest(stopReason = StopReason.FIXED_POINT)
+            android.util.Log.i("MAGI_DELTA", GlobalNativeSkipGate.gate.stats())
+        return session.snapshotBest(stopReason = StopReason.FIXED_POINT)
         }
         SimpleRsi(problem, session, fixProvider).run(
             SimpleRsi.Params(
@@ -167,6 +170,7 @@ class SchedulerService(
             reportOf = { it.second },
             better = better,
         ).map { it.first }.filter { !it.contentDeepEquals(session.best) }.take(3)
+        android.util.Log.i("MAGI_DELTA", GlobalNativeSkipGate.gate.stats())
         return session.snapshotBest(alternatives = alts, stopReason = reason)
     }
 
