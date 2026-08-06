@@ -34,13 +34,12 @@ object RebuildOptimizeEntry {
         shouldStop: () -> Boolean = { false },
         onProgress: ((SearchProgress) -> Unit)? = null,
     ): ScheduleRunResult {
-        val ver = AppVersion.info
-        Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION " + ver.logLine() + " engine=rebuild")
-        Log.i("MAGI", "アプリ版 " + ver.compact())
-        val ver = runCatching { com.magi.app.v6.engine.AppVersion.info.compact() }.getOrDefault("?")
+        val verInfo = AppVersion.info
+        Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION " + verInfo.logLine() + " engine=rebuild")
+        Log.i("MAGI", "アプリ版 " + verInfo.compact())
         Log.i(
             "MAGI",
-            "最適化 開始 version=$ver engine=rebuild budget=${budgetSec}s workers=$workers " +
+            "最適化 開始 version=${verInfo.compact()} engine=rebuild budget=${budgetSec}s workers=$workers " +
                 "native=${com.magi.app.v6.NativeBridge.available} gate=${com.magi.app.v6.NativeGate.usable}",
         )
         Log.i("MAGI", "探索フェーズ: rebuild-pipeline")
