@@ -134,9 +134,9 @@ class ParallelSaCoordinator(
             val session = SearchSessionFull(
                 problem,
                 SearchSessionFull.deepCopy(initial),
-                evaluate,
+                ::safeEvaluate,
                 better,
-                deltaHook = deltaHook,
+                deltaHook = null,
             )
             val g1 = G1LocalAnnealer(problem, session)
             var totalIters = 0L
