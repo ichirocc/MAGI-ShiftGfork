@@ -154,7 +154,7 @@ object FullOptimizePipeline {
                 c3 = c3,
                 personal = personal,
                 workers = options.workers.coerceIn(1, 16),
-                nativeProbe = probe,
+                nativeProbe = if (options.workers > 1) null else probe,
                 progressListener = listener,
                 requireWeights = true,
             )
@@ -199,7 +199,7 @@ object FullOptimizePipeline {
                     c3 = c3,
                     personal = personal,
                     workers = 1,
-                    nativeProbe = probe,
+                    nativeProbe = if (options.workers > 1) null else probe,
                     progressListener = listener,
                     requireWeights = true,
                 ).optimize(
