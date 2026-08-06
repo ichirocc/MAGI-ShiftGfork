@@ -78,6 +78,15 @@ object FullOptimizePipeline {
 
         val schedule0 = ensureInitial(state, scheduleIn, options.generateInitialIfNeeded)
         val problem = Problem(state)
+        // フル評価を C++ に載せる（Evaluator.fullEvalParts が参照）
+        var fullEvalHandle = 0L
+        if (options.autoNative && com.magi.app.v6.NativeBridge.available) {
+            fullEvalHandle = runCatching { NativeEval.createHandle(problem) }.getOrDefault(0L)
+            if (fullEvalHandle != 0L) {
+                com.magi.app.v6.NativeFullEval.attach(fullEvalHandle)
+                com.magi.app.v6.NativeFullEval.assertParitySample(problem, schedule0)
+            }
+        }
         val evaluate: (Array<IntArray>) -> ViolationReport = { sch ->
             UnifiedViolationChecker.check(state, sch)
         }
@@ -232,6 +241,11 @@ object FullOptimizePipeline {
                 ),
             )
         } finally {
+            com.magi.app.v6.NativeFullEval.detach()
+            android.util.Log.i("MAGI_FULL", com.magi.app.v6.NativeFullEval.stats())
+            if (fullEvalHandle != 0L) {
+                runCatching { com.magi.app.v6.NativeBridge.nativeDestroyProblem(fullEvalHandle) }
+            }
             if (handle != 0L) runCatching { NativeBridge.nativeDestroyProblem(handle) }
         }
     }
