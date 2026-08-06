@@ -53,7 +53,9 @@ class G1LocalAnnealer(
         val lahc = LahcHistory(params.lahcLen, packedScore(session.currentReport))
         var iters = 0L
         var lastReheatSeen = 0
-        var nativeHints = 0L
+        var nativeDeltaOk = 0L
+        var nativeEarlyReject = 0L
+        var nativeAcceptHint = 0L
 
         fun timeUp() =
             params.shouldStop() ||
@@ -70,25 +72,26 @@ class G1LocalAnnealer(
                     // C++ 差分スコアで明らかに悪化かつ低温なら Kotlin フル評価をスキップ
                     var skipKotlin = false
                     val probe = params.nativeProbe
-                    if (probe is NativeBridgeProbe) {
+                    if (probe is NativeBridgeProbe && com.magi.app.v6.NativeGate.usable) {
                         val flat = ScheduleFlat.flatten(session.current)
                         val d = probe.deltaScore(flat, move.writes)
                         if (d != null) {
-                            nativeHints++
+                            nativeDeltaOk++
                             val before = packedScore(session.currentReport)
-                            // hard が増える案は温度に関係なく却下（Session と同じ契約）
+                            // hard 増は Session 契約どおり即棄却（C++ hard は Evaluator 系）
                             if (d.hardAfter > session.currentReport.hard) {
                                 skipKotlin = true
+                                nativeEarlyReject++
                             } else if (d.afterPacked > before && ctrl.temperature < 0.05) {
-                                // 極低温では悪化をほぼ受けない → 早期棄却
                                 skipKotlin = true
+                                nativeEarlyReject++
                             }
                         }
                     } else if (probe != null) {
                         val pre = session.nativePrefilter(
                             move, TransitionMode.ANNEAL, probe, ctrl.temperature,
                         )
-                        if (pre.status > 0) nativeHints++
+                        if (pre.status > 0) nativeAcceptHint++
                     }
                     if (skipKotlin) {
                         ctrl.onTrial(
@@ -139,9 +142,10 @@ class G1LocalAnnealer(
                 }
             }
         }
-        if (nativeHints > 0L) {
-            android.util.Log.i("MAGI_DELTA", "G1 nativeHints=$nativeHints iters=$iters")
-        }
+        android.util.Log.i(
+            "MAGI_DELTA",
+            "G1 iters=$iters deltaOk=$nativeDeltaOk earlyReject=$nativeEarlyReject acceptHint=$nativeAcceptHint usable=${com.magi.app.v6.NativeGate.usable}",
+        )
         return iters
     }
 
