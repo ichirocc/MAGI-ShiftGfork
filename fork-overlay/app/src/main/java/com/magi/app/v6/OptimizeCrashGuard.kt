@@ -23,13 +23,21 @@ object OptimizeCrashGuard {
      */
     fun beforeOptimize(workers: Int, nativeUserPref: Boolean): Int {
         val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        val w = workers.coerceIn(1, cores.coerceAtMost(8))
+        var w = workers.coerceIn(1, cores.coerceAtMost(8))
+        val maxPar = 4
+        if (w > maxPar) {
+            Log.w(TAG, "OptimizeCrashGuard: workers $w → $maxPar")
+            w = maxPar
+        }
 
-        // ユーザーOFFなら確実に閉じる
-        NativeGate.userEnabled = nativeUserPref
+        NativeGate.userEnabled = nativeUserPref && NativeBridge.available
 
-        // 並列かつ native は危険だったが、SaOptimizer を per-handle 化したので許可。
-        // ただし .so 未ロードや過去番兵発火時は usable=false のまま Kotlin のみ。
+        // 根本: 並列時は native を使わない（共有 handle / Checker 競合の根を断つ）
+        if (w > 1) {
+            NativeGate.userEnabled = false
+            Log.i(TAG, "OptimizeCrashGuard: workers=$w>1 → native OFF (Kotlin parallel only)")
+        }
+
         if (!NativeBridge.available) {
             NativeGate.userEnabled = false
             Log.i(TAG, "OptimizeCrashGuard: native .so なし → Kotlin のみ workers=$w")
