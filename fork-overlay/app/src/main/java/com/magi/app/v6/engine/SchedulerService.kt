@@ -83,8 +83,8 @@ class SchedulerService(
         fun stopSearch() = shouldStop() || System.currentTimeMillis() >= searchDl
 
         // G1: workers==1 → 単一 Session（再現性）。workers>=2 → 独立並列 SA → best を本 session に吸収
+        var g1Iters = 0L
         if (workers <= 1) {
-            var g1Iters = 0L
             G1LocalAnnealer(problem, session, packedScore).run(
                 G1Params(
                     budgetMs = g1Ms,
