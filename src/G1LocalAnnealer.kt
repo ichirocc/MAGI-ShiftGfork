@@ -20,6 +20,10 @@ data class G1Params(
     val nativeProbe: NativeWritesProbe? = null,
     /** >0 なら時間ではなく反復上限で停止（再現テスト用） */
     val maxIters: Long = 0L,
+    val earlyRejectHardIncrease: Boolean = true,
+    val earlyRejectColdWorse: Boolean = false,
+    val onProgressTick: ((Long, com.magi.app.v6.ViolationReport) -> Unit)? = null,
+    val progressEveryMs: Long = 1500L,
 )
 
 /**
