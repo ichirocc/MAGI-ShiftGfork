@@ -84,8 +84,26 @@ class SchedulerService(
 
         // G1: workers==1 → 単一 Session（再現性）。workers>=2 → 独立並列 SA → best を本 session に吸収
         if (workers <= 1) {
+            var g1Iters = 0L
             G1LocalAnnealer(problem, session, packedScore).run(
-                G1Params(budgetMs = g1Ms, shouldStop = { stopSearch() }, nativeProbe = nativeProbe, maxIters = fixedItersG1),
+                G1Params(
+                    budgetMs = g1Ms,
+                    shouldStop = { stopSearch() },
+                    nativeProbe = nativeProbe,
+                    maxIters = fixedItersG1,
+                    onProgressTick = { it, rep ->
+                        g1Iters = it
+                        progressListener?.onProgress(
+                            SearchProgress(
+                                phase = "g1",
+                                report = rep,
+                                iters = it,
+                                elapsedMs = System.currentTimeMillis() - started,
+                                schedule = null, // 高頻度なので盤面は載せない
+                            ),
+                        )
+                    },
+                ),
                 rng,
             )
         } else {
@@ -99,7 +117,7 @@ class SchedulerService(
             session.replaceBestIfBetter(par.schedule, par.report)
         }
         g4.considerStrict(session.best, session.bestReport)
-        emit("g1")
+        emit("g1", iters = g1Iters)
 
                 // RSI（フォーク元分解）: 最大違反族フォーカス
         val rsiMs = (g2Ms * 0.55).toLong().coerceAtLeast(1L)
