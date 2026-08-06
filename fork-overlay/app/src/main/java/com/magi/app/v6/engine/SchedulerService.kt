@@ -113,6 +113,7 @@ class SchedulerService(
                 budgetMs = g1Ms,
                 baseSeed = if (baseSeed != 0L) baseSeed else rng.nextLong(),
                 shouldStop = { stopSearch() },
+                allowNative = true,
                 onProgress = { it, rep ->
                     g1Iters = it
                     runCatching {
