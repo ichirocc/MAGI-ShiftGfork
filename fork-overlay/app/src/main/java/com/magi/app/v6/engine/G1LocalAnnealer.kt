@@ -93,12 +93,14 @@ class G1LocalAnnealer(
                         val d = probe.deltaScore(flat, move.writes)
                         if (d != null) {
                             nativeDeltaOk++
-                            val before = packedScore(session.currentReport)
-                            // hard 増は Session 契約どおり即棄却（C++ hard は Evaluator 系）
-                            if (d.hardAfter > session.currentReport.hard) {
+                            // hard は C++ packed 同士のみ比較（Checker.report.hard と混同しない）
+                            if (params.earlyRejectHardIncrease && d.hardIncreased) {
                                 skipKotlin = true
                                 nativeEarlyReject++
-                            } else if (d.afterPacked > before && ctrl.temperature < 0.05) {
+                            } else if (params.earlyRejectColdWorse &&
+                                d.afterPacked > packedScore(session.currentReport) &&
+                                ctrl.temperature < 0.05
+                            ) {
                                 skipKotlin = true
                                 nativeEarlyReject++
                             }
