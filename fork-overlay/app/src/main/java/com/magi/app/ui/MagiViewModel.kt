@@ -1059,8 +1059,21 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                             workers = safeWorkers,
                             shouldStop = { !optimizeActive },
                             onProgress = { sp ->
-                                _ui.update {
-                                    it.copy(message = "再構築 ${sp.phase} 実行中…")
+                                // Default スレッドから来るため Main へ。例外で探索を落とさない。
+                                runCatching {
+                                    val rep = sp.report
+                                    _ui.update {
+                                        it.copy(
+                                            message = "再構築 ${sp.phase} 実行中…",
+                                            iters = sp.iters,
+                                            elapsedMs = sp.elapsedMs.coerceAtLeast(
+                                                System.currentTimeMillis() - startMs,
+                                            ),
+                                            bestHard = rep.hard.toLong(),
+                                            bestSoft = rep.soft.toLong(),
+                                            totalViolations = rep.total,
+                                        )
+                                    }
                                 }
                             },
                         )
