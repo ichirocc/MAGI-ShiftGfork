@@ -37,7 +37,12 @@ object RebuildOptimizeEntry {
         val ver = AppVersion.info
         Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION " + ver.logLine() + " engine=rebuild")
         Log.i("MAGI", "アプリ版 " + ver.compact())
-        Log.i("MAGI", "最適化 開始（再構築エンジン / 予算${budgetSec}s / 並列${workers}）")
+        val ver = runCatching { com.magi.app.v6.engine.AppVersion.info.compact() }.getOrDefault("?")
+        Log.i(
+            "MAGI",
+            "最適化 開始 version=$ver engine=rebuild budget=${budgetSec}s workers=$workers " +
+                "native=${com.magi.app.v6.NativeBridge.available} gate=${com.magi.app.v6.NativeGate.usable}",
+        )
         Log.i("MAGI", "探索フェーズ: rebuild-pipeline")
 
         val budgetMs = budgetSec.coerceAtLeast(1) * 1000L
