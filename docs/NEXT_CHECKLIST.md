@@ -1,24 +1,14 @@
 # 次作業チェックリスト（MAGI-ShiftGfork）
 
-## 完了済み
-- [x] 再構築エンジン G1–G4 配線
-- [x] REBUILD_ENGINE 全ビルドで true
-- [x] RebuildOptimizeEntry 常時 enabled
-- [x] autoNative=false（JNI 強制終了回避）
-- [x] ANNEAL/Metropolis HARD ゲート
-- [x] 重み監査ログ MAGI_WEIGHTS
-- [x] アプリ版ログ MAGI_VERSION
-- [x] Android バブル
-- [x] CI green（Overlay / SDK / V6）
+## 完了
+- Kotlin/C++ 棲み分け契約
+- 差分・フル数値評価の C++ 移行
+- 並列 SA ワーカー専用 handle
+- REBUILD 常時 ON
+- G1 メトリクス分離（deltaOk / earlyReject / acceptHint）
 
 ## 次（優先）
-1. 実機で操作ログに「再構築エンジン」「探索フェーズ: rebuild-…」が出ることを確認
-2. 同じ 10×31 データで HARD 改善推移を V5 SA と比較（MAGI_BENCH）
-3. Native パリティ安定後に autoNative=true を段階再開
-4. 希望固定 c3n 構造壁の PROVEN 早期打ち切りと SOFT 再配分
-
-## 実機確認の見方
-| ログ | 経路 |
-|------|------|
-| 探索フェーズ: V5 SA | 上流（古い APK の可能性） |
-| 探索フェーズ: rebuild-… / 再構築エンジン | 新エンジン（正しい） |
+1. 実機 A/B: G1 早期棄却 ON/OFF で HARD・時間比較
+2. パリティ soft 差分の族別ログ
+3. STRICT 研磨へ native skip 接続
+4. 本番 10x31 で MAGI_FULL / MAGI_DELTA / MAGI_PARITY 収集
