@@ -12,6 +12,7 @@ import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -43,10 +44,12 @@ class ParallelSaCoordinator(
         budgetMs: Long = 120_000L,
         baseSeed: Long = 1L,
         shouldStop: () -> Boolean = { false },
+        onProgress: ((iters: Long, best: ViolationReport) -> Unit)? = null,
     ): ParallelSaResult {
         val n = workers.coerceIn(1, 16)
         val deadline = System.currentTimeMillis() + budgetMs
         val stop = AtomicBoolean(false)
+        val sharedIters = AtomicLong(0L)
         val elite = AtomicReference(
             Elite(SearchSessionFull.deepCopy(initial), evaluate(initial)),
         )
@@ -55,8 +58,13 @@ class ParallelSaCoordinator(
             val futures = (0 until n).map { w ->
                 val seed = baseSeed xor (w.toLong() * -0x61c8864680b583ebL)
                 pool.submit(Callable {
-                    workerLoop(w, seed, initial, deadline, stop, shouldStop, elite)
+                    workerLoop(w, seed, initial, deadline, stop, shouldStop, elite, sharedIters)
                 })
+            }
+            while (futures.any { !it.isDone }) {
+                if (shouldStop()) { stop.set(true); break }
+                onProgress?.invoke(sharedIters.get(), elite.get().report)
+                try { Thread.sleep(1500L) } catch (_: InterruptedException) { stop.set(true); break }
             }
             var totalIters = 0L
             val reports = ArrayList<ViolationReport>(n)
@@ -70,7 +78,7 @@ class ParallelSaCoordinator(
                 schedule = e.schedule,
                 report = e.report,
                 workerBestReports = reports,
-                totalIters = totalIters,
+                totalIters = totalIters.coerceAtLeast(sharedIters.get()),
                 stopReason = when {
                     shouldStop() -> StopReason.CANCELLED
                     else -> StopReason.DEADLINE
@@ -90,6 +98,7 @@ class ParallelSaCoordinator(
         stop: AtomicBoolean,
         shouldStop: () -> Boolean,
         elite: AtomicReference<Elite>,
+        sharedIters: AtomicLong,
     ): Pair<Long, ViolationReport> {
         val rng = Random(seed)
         val session = SearchSessionFull(
@@ -114,6 +123,7 @@ class ParallelSaCoordinator(
                 rng,
             )
             totalIters += iters
+            sharedIters.addAndGet(iters)
             publishElite(elite, session.best, session.bestReport)
         }
         return totalIters to session.bestReport
