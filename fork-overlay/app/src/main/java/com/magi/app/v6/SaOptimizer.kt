@@ -103,9 +103,6 @@ class SaOptimizer(private val problem: Problem, private val evaluator: Evaluator
                 }
                 val nativeHandle = if (NativeGate.usable)
                     runCatching { NativeEval.createHandle(problem) }.getOrDefault(0L) else 0L
-                if (nativeHandle != 0L && NativeFullEval.problemHandle == 0L) {
-                    NativeFullEval.attach(nativeHandle)
-                }
                 try {
                     val nativeOk = if (nativeHandle != 0L && NativeGate.enabled)
                         runWorkerNative(nativeHandle, init, params, Random(seed), start, flush) else false
