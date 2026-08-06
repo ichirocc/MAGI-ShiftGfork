@@ -38,6 +38,12 @@ class ParallelSaCoordinator(
     private val better: (ViolationReport, ViolationReport) -> Boolean,
     private val deltaHook: DeltaEvaluateHook? = null,
 ) {
+    private val evalLock = Any()
+    private fun safeEvaluate(schedule: Array<IntArray>): ViolationReport {
+        val snap = SearchSessionFull.deepCopy(schedule)
+        synchronized(evalLock) { return evaluate(snap) }
+    }
+
     fun run(
         initial: Array<IntArray>,
         workers: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 8),
@@ -46,13 +52,13 @@ class ParallelSaCoordinator(
         shouldStop: () -> Boolean = { false },
         onProgress: ((iters: Long, best: ViolationReport) -> Unit)? = null,
     ): ParallelSaResult {
-        val n = workers.coerceIn(1, 16)
+        val n = workers.coerceIn(1, MAX_PARALLEL)
         val wall0 = System.currentTimeMillis()
         val deadline = wall0 + budgetMs
         val stop = AtomicBoolean(false)
         val sharedIters = AtomicLong(0L)
         val elite = AtomicReference(
-            Elite(SearchSessionFull.deepCopy(initial), evaluate(initial)),
+            Elite(SearchSessionFull.deepCopy(initial), safeEvaluate(initial)),
         )
         val pool = Executors.newFixedThreadPool(n)
         try {
@@ -155,6 +161,10 @@ class ParallelSaCoordinator(
             android.util.Log.e("MAGI", "ParallelSa worker-$workerId crashed: ${t.javaClass.simpleName}", t)
             0L to elite.get().report
         }
+    }
+
+    companion object {
+        const val MAX_PARALLEL = 4
     }
 
     private fun publishElite(
