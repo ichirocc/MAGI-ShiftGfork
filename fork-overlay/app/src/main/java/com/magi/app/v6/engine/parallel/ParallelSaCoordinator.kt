@@ -1,8 +1,5 @@
 package com.magi.app.v6.engine.parallel
 
-import com.magi.app.v6.NativeBridge
-import com.magi.app.v6.NativeEval
-import com.magi.app.v6.NativeGate
 import com.magi.app.v6.Problem
 import com.magi.app.v6.ViolationReport
 import com.magi.app.v6.engine.DeltaEvaluateHook
@@ -10,7 +7,6 @@ import com.magi.app.v6.engine.G1LocalAnnealer
 import com.magi.app.v6.engine.G1Params
 import com.magi.app.v6.engine.SearchSessionFull
 import com.magi.app.v6.engine.StopReason
-import com.magi.app.v6.engine.nativex.NativeBridgeProbe
 import java.util.Random
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
@@ -20,24 +16,17 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * 完成版並列 SA
+ * 並列 SA（g1-parallel 完成・安定版）
  *
- * ## 並列の契約（根本）
- * 各ワーカーが持つもの（共有しない）:
- * - SearchSessionFull（盤面・version・undo）
- * - G1LocalAnnealer
- * - Native problem handle（[allowNative] 時のみ・create/destroy はワーカー内）
- * - 評価用の盤面スナップショット
+ * ## なぜ並列内で native を使わないか（クラッシュの根）
+ * JNI [NativeEval.createHandle] / delta を複数スレッドから同時に呼ぶと、
+ * C++ 側の非スレッドセーフ初期化やグローバルとぶつかり SIGSEGV する実害があった。
  *
- * 共有してよいもの:
- * - Problem（探索中は読み取り専用）
- * - Elite の CAS
- * - AtomicLong iters / stop フラグ
+ * ## 並列の正しい役割分担
+ * - **並列フェーズ（ここ）**: Kotlin のみ。ワーカー独立 Session で探索を並列化
+ * - **単一スレッドフェーズ**: マージ後にメイン Session で native 加速（Scheduler 側）
  *
- * 評価:
- * - 入力 schedule は必ず deepCopy してから [evaluate] へ（呼び出し側バッファを触らない）
- * - Checker がスレッドセーフでない場合に備え、評価だけ短時間のロックを取る
- *   （探索本体・近傍生成はロック外＝真の並列）
+ * 共有は Elite CAS と原子カウンタのみ。評価は盤面コピー＋短時間ロック。
  */
 data class ParallelSaResult(
     val schedule: Array<IntArray>,
@@ -59,7 +48,6 @@ class ParallelSaCoordinator(
     @Suppress("UNUSED_PARAMETER")
     private val deltaHook: DeltaEvaluateHook? = null,
 ) {
-    /** 評価の短時間直列化（近傍探索は並列のまま） */
     private val evalLock = Any()
 
     private fun evalSnapshot(schedule: Array<IntArray>): ViolationReport {
@@ -76,45 +64,29 @@ class ParallelSaCoordinator(
         baseSeed: Long = 1L,
         shouldStop: () -> Boolean = { false },
         onProgress: ((iters: Long, best: ViolationReport) -> Unit)? = null,
-        allowNative: Boolean = true,
+        @Suppress("UNUSED_PARAMETER")
+        allowNative: Boolean = false, // 互換のため残す。並列内 native は常に無効
     ): ParallelSaResult {
         val n = workers.coerceIn(1, MAX_PARALLEL)
-        val wall0 = System.currentTimeMillis()
-        val deadline = wall0 + budgetMs.coerceAtLeast(1L)
+        val deadline = System.currentTimeMillis() + budgetMs.coerceAtLeast(1L)
         val stop = AtomicBoolean(false)
         val sharedIters = AtomicLong(0L)
         val initialCopy = SearchSessionFull.deepCopy(initial)
         val elite = AtomicReference(
             Elite(SearchSessionFull.deepCopy(initialCopy), evalSnapshot(initialCopy)),
         )
-        val useNative = allowNative && NativeBridge.available && NativeGate.usable
 
         android.util.Log.i(
             "MAGI",
-            "ParallelSa start workers=$n budgetMs=$budgetMs native=$useNative seed=$baseSeed",
+            "ParallelSa start workers=$n budgetMs=$budgetMs mode=kotlin-only (native after merge)",
         )
 
         if (n == 1) {
-            val (iters, rep) = workerLoop(
-                workerId = 0,
-                seed = baseSeed,
-                initial = initialCopy,
-                deadline = deadline,
-                stop = stop,
-                shouldStop = shouldStop,
-                elite = elite,
-                sharedIters = sharedIters,
-                useNative = useNative,
-            )
+            val (iters, rep) = runWorker(0, baseSeed, initialCopy, deadline, stop, shouldStop, elite, sharedIters)
             runCatching { onProgress?.invoke(iters, elite.get().report) }
             val e = elite.get()
-            return ParallelSaResult(
-                schedule = e.schedule,
-                report = e.report,
-                workerBestReports = listOf(rep),
-                totalIters = iters,
-                stopReason = if (shouldStop()) StopReason.CANCELLED else StopReason.DEADLINE,
-            )
+            return ParallelSaResult(e.schedule, e.report, listOf(rep), iters,
+                if (shouldStop()) StopReason.CANCELLED else StopReason.DEADLINE)
         }
 
         val pool = Executors.newFixedThreadPool(n)
@@ -122,17 +94,7 @@ class ParallelSaCoordinator(
             val futures = (0 until n).map { w ->
                 val seed = baseSeed xor (w.toLong() * -0x61c8864680b583ebL)
                 pool.submit(Callable {
-                    workerLoop(
-                        workerId = w,
-                        seed = seed,
-                        initial = initialCopy,
-                        deadline = deadline,
-                        stop = stop,
-                        shouldStop = shouldStop,
-                        elite = elite,
-                        sharedIters = sharedIters,
-                        useNative = useNative,
-                    )
+                    runWorker(w, seed, initialCopy, deadline, stop, shouldStop, elite, sharedIters)
                 })
             }
             while (futures.any { !it.isDone }) {
@@ -156,8 +118,8 @@ class ParallelSaCoordinator(
                 val waitMs = (deadline - System.currentTimeMillis() + JOIN_SLACK_MS).coerceAtLeast(5_000L)
                 val pair = runCatching {
                     f.get(waitMs, TimeUnit.MILLISECONDS)
-                }.getOrElse { ex ->
-                    android.util.Log.w("MAGI", "ParallelSa join: ${ex.javaClass.simpleName}")
+                }.getOrElse {
+                    android.util.Log.w("MAGI", "ParallelSa join: ${it.javaClass.simpleName}")
                     0L to elite.get().report
                 }
                 totalIters += pair.first
@@ -184,7 +146,7 @@ class ParallelSaCoordinator(
         }
     }
 
-    private fun workerLoop(
+    private fun runWorker(
         workerId: Int,
         seed: Long,
         initial: Array<IntArray>,
@@ -193,9 +155,7 @@ class ParallelSaCoordinator(
         shouldStop: () -> Boolean,
         elite: AtomicReference<Elite>,
         sharedIters: AtomicLong,
-        useNative: Boolean,
     ): Pair<Long, ViolationReport> {
-        var nativeHandle = 0L
         return try {
             val rng = Random(seed)
             val session = SearchSessionFull(
@@ -205,29 +165,17 @@ class ParallelSaCoordinator(
                 better,
                 deltaHook = null,
             )
-            // ワーカー専用 native handle（共有しない）
-            val probe = if (useNative) {
-                nativeHandle = runCatching { NativeEval.createHandle(problem) }.getOrDefault(0L)
-                if (nativeHandle != 0L) NativeBridgeProbe(nativeHandle) else null
-            } else {
-                null
-            }
-            if (probe != null) {
-                android.util.Log.i("MAGI", "ParallelSa worker-$workerId nativeHandle=$nativeHandle")
-            }
             val g1 = G1LocalAnnealer(problem, session)
             var totalIters = 0L
             while (!stop.get() && !shouldStop() && System.currentTimeMillis() < deadline) {
                 val remain = deadline - System.currentTimeMillis()
                 if (remain <= 0L) break
-                val budget = minOf(SLICE_MS, remain)
                 val iters = g1.run(
                     G1Params(
-                        budgetMs = budget,
+                        budgetMs = minOf(SLICE_MS, remain),
                         shouldStop = { stop.get() || shouldStop() },
-                        nativeProbe = probe,
-                        // 並列では hard 増の早期棄却のみ（品質安全）
-                        earlyRejectHardIncrease = probe != null,
+                        nativeProbe = null,
+                        earlyRejectHardIncrease = false,
                         earlyRejectColdWorse = false,
                     ),
                     rng,
@@ -238,16 +186,8 @@ class ParallelSaCoordinator(
             }
             totalIters to session.bestReport
         } catch (t: Throwable) {
-            android.util.Log.e(
-                "MAGI",
-                "ParallelSa worker-$workerId ${t.javaClass.simpleName}: ${t.message}",
-                t,
-            )
+            android.util.Log.e("MAGI", "ParallelSa worker-$workerId ${t.javaClass.simpleName}: ${t.message}", t)
             0L to elite.get().report
-        } finally {
-            if (nativeHandle != 0L) {
-                runCatching { NativeBridge.nativeDestroyProblem(nativeHandle) }
-            }
         }
     }
 
@@ -265,7 +205,6 @@ class ParallelSaCoordinator(
     }
 
     companion object {
-        /** 端末コア数に合わせて上げてよい上限 */
         const val MAX_PARALLEL = 8
         private const val SLICE_MS = 2_500L
         private const val PROGRESS_MS = 1_500L
