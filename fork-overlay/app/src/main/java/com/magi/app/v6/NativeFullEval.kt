@@ -22,6 +22,7 @@ object NativeFullEval {
     private val nativeHits = AtomicLong(0)
     private val kotlinFalls = AtomicLong(0)
     private val parityFails = AtomicLong(0)
+    @Volatile private var lastFallReason: String = ""
 
     /** 最適化開始時に呼ぶ。終了時は [detach]。 */
     fun attach(handle: Long) {
@@ -34,19 +35,22 @@ object NativeFullEval {
     }
 
     fun stats(): String =
-        "nativeHits=${nativeHits.get()} kotlinFalls=${kotlinFalls.get()} parityFails=${parityFails.get()}"
+        "nativeHits=${nativeHits.get()} kotlinFalls=${kotlinFalls.get()} parityFails=${parityFails.get()} lastFall=${lastFallReason.ifEmpty { "-" }}"
 
     /**
      * @return [hard, soft] or null if native 不可
      */
     fun tryParts(schedule: Array<IntArray>): LongArray? {
         val h = problemHandle
-        if (h == 0L || !NativeBridge.available || !NativeGate.usable) return null
+        if (h == 0L) { lastFallReason = "no_handle"; return null }
+        if (!NativeBridge.available) { lastFallReason = "so_missing"; return null }
+        if (!NativeGate.usable) { lastFallReason = "gate_off"; return null }
         val flat = NativeEval.flatten(schedule)
-        val r = runCatching { NativeBridge.nativeFullEval(h, flat) }.getOrNull() ?: return null
-        if (r.size < 2 || r[0] < 0L) return null
-        // 辞書式パック契約: soft が桁を超えたら信用せず Kotlin へ
+        val r = runCatching { NativeBridge.nativeFullEval(h, flat) }.getOrNull()
+        if (r == null) { lastFallReason = "jni_null"; return null }
+        if (r.size < 2 || r[0] < 0L) { lastFallReason = "bad_result"; return null }
         if (r[1] < 0L || r[1] >= com.magi.app.v6.SCORE_HARD_UNIT) {
+            lastFallReason = "soft_oor"
             Log.w(TAG, "native soft out of range soft=${r[1]} → kotlin fallback")
             return null
         }
@@ -70,7 +74,8 @@ object NativeFullEval {
         return ok
     }
 
-    internal fun noteKotlinFallback() {
+    internal fun noteKotlinFallback(reason: String = lastFallReason.ifEmpty { "unknown" }) {
+        lastFallReason = reason
         kotlinFalls.incrementAndGet()
     }
 }
