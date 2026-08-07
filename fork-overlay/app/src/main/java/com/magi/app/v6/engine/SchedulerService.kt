@@ -107,6 +107,7 @@ class SchedulerService(
                 rng,
             )
         } else {
+            android.util.Log.i("MAGI", "STAGE g1-parallel-enter workers=$workers g1Ms=$g1Ms")
             val par = ParallelSaCoordinator(problem, evaluate, better, deltaHook).run(
                 initial = session.current,
                 workers = workers,
@@ -130,11 +131,12 @@ class SchedulerService(
                 },
             )
             g1Iters = par.totalIters
+            android.util.Log.i("MAGI", "STAGE g1-parallel-exit iters=$g1Iters hard=${par.report.hard}")
             session.replaceBestIfBetter(par.schedule, par.report)
             // 並列は Kotlin のみ。マージ後に単一スレッドで native 加速（安全）
             if (nativeProbe != null && !stopSearch()) {
                 val refineMs = minOf(8_000L, (g1Ms / 8L).coerceAtLeast(2_000L))
-                android.util.Log.i("MAGI", "ParallelSa merge → single-thread native refine ${refineMs}ms")
+                android.util.Log.i("MAGI", "STAGE g1-native-refine-enter ms=$refineMs")
                 val refined = G1LocalAnnealer(problem, session, packedScore).run(
                     G1Params(
                         budgetMs = refineMs,
@@ -146,6 +148,7 @@ class SchedulerService(
                     rng,
                 )
                 g1Iters += refined
+                android.util.Log.i("MAGI", "STAGE g1-native-refine-exit iters=$g1Iters hard=${session.bestReport.hard}")
                 progressListener?.onProgress(
                     SearchProgress(
                         phase = "g1-native-refine",
