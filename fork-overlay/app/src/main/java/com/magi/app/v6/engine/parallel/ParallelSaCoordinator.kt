@@ -78,8 +78,11 @@ class ParallelSaCoordinator(
 
         android.util.Log.i(
             "MAGI",
-            "ParallelSa start workers=$n budgetMs=$budgetMs mode=kotlin-only (native after merge)",
+            "STAGE parallel-start workers=$n budgetMs=$budgetMs mode=kotlin-only",
         )
+        runCatching {
+            onProgress?.invoke(0L, elite.get().report)
+        }
 
         if (n == 1) {
             val (iters, rep) = runWorker(0, baseSeed, initialCopy, deadline, stop, shouldStop, elite, sharedIters)
@@ -130,7 +133,7 @@ class ParallelSaCoordinator(
             runCatching { onProgress?.invoke(finalIters, e.report) }
             android.util.Log.i(
                 "MAGI",
-                "ParallelSa done workers=$n iters=$finalIters hard=${e.report.hard} total=${e.report.total}",
+                "STAGE parallel-done workers=$n iters=$finalIters hard=${e.report.hard} total=${e.report.total}",
             )
             return ParallelSaResult(
                 schedule = e.schedule,
@@ -183,6 +186,12 @@ class ParallelSaCoordinator(
                 totalIters += iters
                 sharedIters.addAndGet(iters)
                 publishElite(elite, session.best, session.bestReport)
+                if (totalIters % 500L < iters.coerceAtLeast(1L)) {
+                    android.util.Log.i(
+                        "MAGI",
+                        "STAGE parallel-worker-$workerId iters=$totalIters hard=${session.bestReport.hard} total=${session.bestReport.total}",
+                    )
+                }
             }
             totalIters to session.bestReport
         } catch (t: Throwable) {
