@@ -78,8 +78,11 @@ class SchedulerService(
         emit("start")
 
         val searchBudget = (searchDl - System.currentTimeMillis()).coerceAtLeast(1L)
-        val g1Ms = (searchBudget * 0.55).toLong().coerceAtLeast(1L)
+        // 並列時は G1 を抑え G2(RSI/ALNS) に時間を残す（後段空振り対策）
+        val g1Ratio = if (workers > 1) 0.40 else 0.50
+        val g1Ms = (searchBudget * g1Ratio).toLong().coerceAtLeast(1L)
         val g2Ms = (searchBudget - g1Ms).coerceAtLeast(1L)
+        android.util.Log.i("MAGI", "STAGE budget g1Ms=$g1Ms g2Ms=$g2Ms ratio=$g1Ratio workers=$workers")
         fun stopSearch() = shouldStop() || System.currentTimeMillis() >= searchDl
 
         // G1: workers==1 → 単一 Session（再現性）。workers>=2 → 独立並列 SA → best を本 session に吸収
@@ -170,7 +173,8 @@ class SchedulerService(
             android.util.Log.i("MAGI_DELTA", GlobalNativeSkipGate.gate.stats())
         return session.snapshotBest(stopReason = StopReason.FIXED_POINT)
         }
-        SimpleRsi(problem, session, fixProvider).run(
+        android.util.Log.i("MAGI", "STAGE rsi-enter budgetMs=$rsiMs hard=${session.bestReport.hard}")
+        val rsiIters = SimpleRsi(problem, session, fixProvider).run(
             SimpleRsi.Params(
                 budgetMs = rsiMs,
                 shouldStop = { stopSearch() },
@@ -181,7 +185,8 @@ class SchedulerService(
             rng,
         )
         g4.considerStrict(session.best, session.bestReport)
-        emit("rsi")
+        android.util.Log.i("MAGI", "STAGE rsi-exit iters=$rsiIters hard=${session.bestReport.hard}")
+        emit("rsi", iters = rsiIters)
 
         // ALNS + VNS（フォーク元分解・論文近傍）
         if (!stopSearch() && alnsMs > 0L) {
