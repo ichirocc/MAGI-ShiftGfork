@@ -165,6 +165,7 @@ object FullOptimizePipeline {
                 com.magi.app.v6.NativeFullEval.detach()
                 android.util.Log.i("MAGI", "NativeFullEval detached for parallel workers=${options.workers}")
             }
+            android.util.Log.i("MAGI", "STAGE pipeline-bridge-optimize begin workers=${options.workers}")
             var art = bridge.optimize(
                 initial = schedule0,
                 totalBudgetMs = options.budgetMs,
@@ -175,6 +176,7 @@ object FullOptimizePipeline {
             if (parallel && fullEvalHandle != 0L && com.magi.app.v6.NativeGate.usable) {
                 com.magi.app.v6.NativeFullEval.attach(fullEvalHandle)
             }
+            android.util.Log.i("MAGI", "STAGE pipeline-bridge-optimize end hard=${art.report.hard}")
             OptimizeBenchLog.phase(
                 engine = OptimizeBenchLog.ENGINE_REBUILD,
                 phase = "pipeline",
