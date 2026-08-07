@@ -65,7 +65,7 @@ class ParallelSaCoordinator(
         shouldStop: () -> Boolean = { false },
         onProgress: ((iters: Long, best: ViolationReport) -> Unit)? = null,
         @Suppress("UNUSED_PARAMETER")
-        allowNative: Boolean = false, // 互換のため残す。並列内 native は常に無効
+        allowNative: Boolean = false, // PARALLEL_NATIVE_FORBIDDEN: JNI は単一スレッド refine のみ
     ): ParallelSaResult {
         val n = workers.coerceIn(1, MAX_PARALLEL)
         val deadline = System.currentTimeMillis() + budgetMs.coerceAtLeast(1L)
