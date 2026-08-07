@@ -1062,25 +1062,26 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                                 // Default スレッドから。例外で探索を落とさない。段階を操作ログへ残す。
                                 runCatching {
                                     val rep = sp.report
+                                    val hard = rep.hard
+                                    val soft = rep.soft
+                                    val total = rep.total
                                     val wall = (System.currentTimeMillis() - startMs).coerceAtLeast(sp.elapsedMs)
                                     _ui.update {
                                         it.copy(
-                                            message = "再構築 ${sp.phase} 実行中… 必須=${rep.hard} ${sp.iters}回",
+                                            message = "再構築 ${sp.phase} 実行中… 必須=$hard ${sp.iters}回",
                                             iters = sp.iters,
                                             elapsedMs = wall,
-                                            bestHard = rep.hard.toLong(),
-                                            bestSoft = rep.soft.toLong(),
-                                            totalViolations = rep.total,
+                                            bestHard = hard.toLong(),
+                                            bestSoft = soft.toLong(),
+                                            totalViolations = total,
                                         )
                                     }
-                                    // 操作ログ: 3秒に1回まで（フリーズ位置の特定用）
                                     val now = System.currentTimeMillis()
                                     if (now - lastPhaseLogMs >= 3_000L) {
                                         lastPhaseLogMs = now
                                         logOp(
                                             "I",
-                                            "進捗 ${sp.phase} 必須=${rep.hard} 合計=${rep.total} " +
-                                                "iters=${sp.iters} 経過${wall / 1000}s",
+                                            "進捗 ${sp.phase} 必須=$hard 合計=$total iters=${sp.iters} 経過${wall / 1000}s",
                                         )
                                     }
                                 }
