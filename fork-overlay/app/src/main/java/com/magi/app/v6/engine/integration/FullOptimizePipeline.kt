@@ -69,13 +69,6 @@ object FullOptimizePipeline {
 
         android.util.Log.i(OptimizeBenchLog.TAG, "MAGI_VERSION ${AppVersion.info.logLine()} engine=rebuild pipeline=FullOptimize")
         val wall0 = System.currentTimeMillis()
-        OptimizeBenchLog.beginRun(
-            engine = OptimizeBenchLog.ENGINE_REBUILD,
-            seed = options.seed,
-            workers = options.workers,
-            budgetMs = options.budgetMs,
-        )
-
         val schedule0 = ensureInitial(state, scheduleIn, options.generateInitialIfNeeded)
         val problem = Problem(state)
         // フル評価を C++ に載せる（Evaluator.fullEvalParts が参照）
@@ -187,6 +180,21 @@ object FullOptimizePipeline {
                 budgetMs = options.budgetMs,
             )
 
+            // 残差用 native（並列中は外していた handle を付け直す）
+            val residualProbe: com.magi.app.v6.engine.nativex.NativeWritesProbe? =
+                if (com.magi.app.v6.NativeBridge.available && com.magi.app.v6.NativeGate.usable) {
+                    if (fullEvalHandle != 0L) {
+                        com.magi.app.v6.NativeFullEval.attach(fullEvalHandle)
+                    }
+                    if (handle != 0L) {
+                        com.magi.app.v6.engine.nativex.NativeBridgeProbe(handle)
+                    } else if (fullEvalHandle != 0L) {
+                        runCatching {
+                            handle = com.magi.app.v6.NativeEval.createHandle(problem)
+                            if (handle != 0L) com.magi.app.v6.engine.nativex.NativeBridgeProbe(handle) else null
+                        }.getOrNull()
+                    } else null
+                } else null
             if (!shouldStop() && art.report.hard > 0 && options.hardResidualMs > 0L) {
                 onProgress?.invoke(
                     SearchProgress("hard_residual", art.report, 0L, 0L, art.schedule),
@@ -201,7 +209,8 @@ object FullOptimizePipeline {
                     c3 = c3,
                     personal = personal,
                     workers = 1,
-                    nativeProbe = if (options.workers > 1) null else probe,
+                    // 残差は単一スレッド。並列メインでもここで native を付け直す
+                    nativeProbe = residualProbe,
                     progressListener = listener,
                     requireWeights = true,
                 ).optimize(
