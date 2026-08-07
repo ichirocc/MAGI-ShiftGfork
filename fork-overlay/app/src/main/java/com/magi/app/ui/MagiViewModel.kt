@@ -1009,12 +1009,13 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val eng = if (com.magi.app.v6.engine.integration.RebuildOptimizeEntry.enabled) "rebuild" else "upstream"
         val nativeOn = _ui.value.nativeAccel && com.magi.app.v6.NativeBridge.available
         val gateOk = com.magi.app.v6.NativeGate.usable
+        val parallelMode = if (_ui.value.workers > 1) "並列=Kotlin/refine+残差=native" else "単一=native可"
         logOp(
             "I",
             "最適化 開始 版=$ver エンジン=$eng 方式=${_ui.value.v6Algorithm} " +
                 "予算${_ui.value.budgetSec}s 並列${_ui.value.workers} " +
                 "native=${if (nativeOn) "on" else "off"} gate=${if (gateOk) "ok" else "off"} " +
-                "仕上げ=${_ui.value.softPolish}",
+                "仕上げ=${_ui.value.softPolish} $parallelMode",
         )
         writeRunMarker("fg")
         OptimizationWorker.clearFiles(getApplication<Application>())   // [C1] fg実行ではbg途中状態は無関係＝掃除
