@@ -178,8 +178,6 @@ class ParallelSaCoordinator(
                         budgetMs = minOf(SLICE_MS, remain),
                         shouldStop = { stop.get() || shouldStop() },
                         nativeProbe = null,
-                        earlyRejectHardIncrease = false,
-                        earlyRejectColdWorse = false,
                     ),
                     rng,
                 )
