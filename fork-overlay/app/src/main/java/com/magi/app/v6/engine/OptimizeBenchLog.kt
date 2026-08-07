@@ -74,6 +74,7 @@ object OptimizeBenchLog {
         fun line(): String = buildString {
             append("MAGI_BENCH_SUMMARY")
             append(" version=").append(AppVersion.info.compact())
+            append(" iters=").append(phases.sumOf { it.iters })
             append(" engine=").append(engine)
             append(" hard=").append(hard)
             append(" soft=").append(soft)
@@ -140,6 +141,7 @@ object OptimizeBenchLog {
     }
 
     fun summary(s: Summary) {
+        val sumIters = s.phases.sumOf { it.iters }
         events.add(
             Event(
                 engine = s.engine,
@@ -149,6 +151,7 @@ object OptimizeBenchLog {
                 total = s.total,
                 weighted = s.weighted,
                 elapsedMs = s.elapsedMs,
+                iters = sumIters,
                 seed = s.seed,
                 workers = s.workers,
                 budgetMs = s.budgetMs,
