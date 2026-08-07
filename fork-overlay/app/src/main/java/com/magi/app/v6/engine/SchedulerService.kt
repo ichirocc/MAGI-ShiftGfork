@@ -191,13 +191,17 @@ class SchedulerService(
         // ALNS + VNS（フォーク元分解・論文近傍）
         if (!stopSearch() && alnsMs > 0L) {
             val alnsDeadline = System.currentTimeMillis() + alnsMs
-            AlnsPolish(problem, rng).run(session, alnsDeadline)
+            android.util.Log.i("MAGI", "STAGE alns-enter deadlineIn=${alnsMs}ms")
+            val alnsAccepts = AlnsPolish(problem, rng).run(session, alnsDeadline).toLong()
             g4.considerStrict(session.best, session.bestReport)
-            emit("alns")
+            android.util.Log.i("MAGI", "STAGE alns-exit accepts=$alnsAccepts hard=${session.bestReport.hard}")
+            emit("alns", iters = alnsAccepts)
             if (!stopSearch() && System.currentTimeMillis() < alnsDeadline) {
-                VnsPolish(problem, rng).run(session, alnsDeadline)
+                android.util.Log.i("MAGI", "STAGE vns-enter")
+                val vnsAccepts = VnsPolish(problem, rng).run(session, alnsDeadline).toLong()
                 g4.considerStrict(session.best, session.bestReport)
-                emit("vns")
+                android.util.Log.i("MAGI", "STAGE vns-exit accepts=$vnsAccepts hard=${session.bestReport.hard}")
+                emit("vns", iters = vnsAccepts)
             }
         }
 
@@ -226,7 +230,7 @@ class SchedulerService(
             emit("g4")
         }
 
-        emit("done")
+        emit("done", iters = g1Iters) // 主要探索量の目安（G1）。詳細は phase 行を参照
         val reason = when {
             shouldStop() -> StopReason.CANCELLED
             stopG3 == StopReason.FIXED_POINT -> StopReason.FIXED_POINT
