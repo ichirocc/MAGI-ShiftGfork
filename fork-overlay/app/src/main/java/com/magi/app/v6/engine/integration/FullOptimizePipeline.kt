@@ -220,6 +220,24 @@ object FullOptimizePipeline {
                     seed = baseSeed xor 0x11A11D11L,
                     shouldStop = shouldStop,
                 )
+                OptimizeBenchLog.phase(
+                    engine = OptimizeBenchLog.ENGINE_REBUILD,
+                    phase = "residual",
+                    report = residual.report,
+                    elapsedMs = System.currentTimeMillis() - wall0,
+                    seed = baseSeed,
+                    workers = 1,
+                    budgetMs = options.hardResidualMs,
+                )
+                onProgress?.invoke(
+                    SearchProgress(
+                        "residual",
+                        residual.report,
+                        0L,
+                        System.currentTimeMillis() - wall0,
+                        residual.schedule,
+                    ),
+                )
                 if (better(residual.report, art.report)) {
                     art = residual
                 }
