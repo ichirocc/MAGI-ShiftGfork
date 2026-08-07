@@ -269,8 +269,11 @@ object FullOptimizePipeline {
                     phases = OptimizeBenchLog.snapshot().filter { it.engine == OptimizeBenchLog.ENGINE_REBUILD },
                 ),
             )
+            val doneIters = OptimizeBenchLog.snapshot()
+                .filter { it.engine == OptimizeBenchLog.ENGINE_REBUILD }
+                .sumOf { it.iters }
             onProgress?.invoke(
-                SearchProgress("done", finalReport, 0L, elapsed, art.schedule),
+                SearchProgress("done", finalReport, doneIters, elapsed, art.schedule),
             )
             return ScheduleRunResult(
                 schedule = art.schedule,
