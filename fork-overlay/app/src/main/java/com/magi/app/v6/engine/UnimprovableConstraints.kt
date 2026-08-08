@@ -1,10 +1,8 @@
 package com.magi.app.v6.engine
 
 import com.magi.app.v6.Problem
+import com.magi.app.v6.constraintConfig
 import com.magi.app.v6.ViolationReport
-import com.magi.app.v6.canDo
-import com.magi.app.v6.wishLocked
-import com.magi.app.v6.allowedShiftsForStaff
 
 /**
  * 探索では改善できない HARD / シフト制約の検出。
