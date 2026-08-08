@@ -45,15 +45,15 @@ object ConstraintPolishers {
         "wish", "pref" -> polishWish(board, problem, rng)
         "bal", "fair" -> polishBalance(board, problem, rng)
         "weekly" -> polishWeekly(board, problem, rng)
-        "c3" -> polishC3(board, problem, rng)
+        "c3" -> (DirectionalPolish.consecutivePastOrFuture(board, problem, rng) ?: polishC3(board, problem, rng))
         "c3m" -> polishC3m(board, problem, rng)
         "c3mn" -> polishC3mn(board, problem, rng)
-        "c3n" -> polishC3n(board, problem, rng)
+        "c3n" -> (DirectionalPolish.forbiddenPastOrFuture(board, problem, rng) ?: polishC3n(board, problem, rng))
         "c1" -> polishC1(board, problem, rng)
         "c2" -> polishC2(board, problem, rng)
         "apt" -> polishApt(board, problem, rng)
         "groupViol" -> polishGroup(board, problem, rng)
-        else -> null
+        else -> DirectionalPolish.proposeAny(board, problem, rng)
     }
 
     // ---- individual polishers ----
