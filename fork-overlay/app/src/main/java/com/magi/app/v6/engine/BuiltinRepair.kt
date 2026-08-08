@@ -1,6 +1,9 @@
 package com.magi.app.v6.engine
 
 import com.magi.app.v6.Problem
+import com.magi.app.v6.wishLocked
+import com.magi.app.v6.canDo
+import com.magi.app.v6.allowedShiftsForStaff
 import com.magi.app.v6.skillMatrix
 import com.magi.app.v6.ViolationReport
 import java.util.Random
@@ -78,10 +81,10 @@ class FocusAwareFixProvider(
                 !problem.wishLocked(it, d) && problem.canDo(it, k) && board.current[it][d] != k
             }.shuffled(rng)
             // 過多シフトにいる人を優先して不足シフトへ
-            val ordered = staffs.sortedBy { s ->
+            val ordered = staffs.sortedBy { s: Int ->
                 val cur = board.current[s][d]
                 if (cur !in 0 until problem.K) return@sortedBy 1
-                val needCur = sd.getOrNull(d)?.getOrNull(cur) ?: 0
+                val needCur = if (d < sd.size && cur < sd[d].size) sd[d][cur] else 0
                 val haveCur = have[d][cur]
                 when {
                     needCur > 0 && haveCur > needCur -> 0
@@ -129,8 +132,8 @@ class FocusAwareFixProvider(
                 val alt = problem.allowedShiftsForStaff(s).filter { it != k }
                 if (alt.isEmpty()) continue
                 // 不足シフトを優先
-                val prefer = alt.sortedBy { nk ->
-                    val need = sd.getOrNull(d)?.getOrNull(nk) ?: 0
+                val prefer = alt.sortedBy { nk: Int ->
+                    val need = if (d < sd.size && nk < sd[d].size) sd[d][nk] else 0
                     val hv = if (nk in 0 until problem.K) have[d][nk] else 0
                     if (need > hv) 0 else 1
                 }
