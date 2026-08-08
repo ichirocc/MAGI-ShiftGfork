@@ -51,7 +51,14 @@ class SchedulerService(
         var session = SearchSessionFull(problem, initial, evaluate, better, deltaHook = deltaHook)
         val g4 = G4Diversify(better)
         fun emit(phase: String, iters: Long = 0L, withSchedule: Boolean = true) {
-            android.util.Log.i("MAGI", "探索フェーズ: rebuild-$phase 必須=${session.bestReport.hard} 合計=${session.bestReport.total}")
+            val bd = session.bestReport.breakdown
+            val hardBits = listOf("covU", "covO", "c3n", "groupViol", "pref").joinToString(",") { k ->
+                "$k=${bd[k] ?: 0}"
+            }
+            android.util.Log.i(
+                "MAGI",
+                "探索フェーズ: rebuild-$phase 必須=${session.bestReport.hard} soft=${session.bestReport.soft} 合計=${session.bestReport.total} iters=$iters $hardBits",
+            )
 
             val elapsed = System.currentTimeMillis() - started
             WeightAuditLog.logContribution(phase, session.bestReport)
