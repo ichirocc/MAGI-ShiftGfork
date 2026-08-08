@@ -174,8 +174,12 @@ class SchedulerService(
         emit("g1", iters = g1Iters)
 
                 // RSI（フォーク元分解）: 最大違反族フォーカス
-        val rsiMs = (g2Ms * 0.55).toLong().coerceAtLeast(1L)
+        // HARD が残っている間は RSI に厚く配分（後段空振り対策）
+        val hardAfterG1 = session.bestReport.hard
+        val rsiShare = if (hardAfterG1 > 0) 0.72 else 0.50
+        val rsiMs = (g2Ms * rsiShare).toLong().coerceAtLeast(1L)
         val alnsMs = (g2Ms - rsiMs).coerceAtLeast(1L)
+        android.util.Log.i("MAGI", "STAGE post-g1 hard=$hardAfterG1 g2Ms=$g2Ms rsiMs=$rsiMs alnsMs=$alnsMs share=$rsiShare")
         if (skipPostProcess) {
             android.util.Log.i("MAGI_DELTA", GlobalNativeSkipGate.gate.stats())
         return session.snapshotBest(stopReason = StopReason.FIXED_POINT)
@@ -193,6 +197,15 @@ class SchedulerService(
         )
         g4.considerStrict(session.best, session.bestReport)
         android.util.Log.i("MAGI", "STAGE rsi-exit iters=$rsiIters hard=${session.bestReport.hard}")
+        runCatching {
+            MirrorLog.emit(
+                "I",
+                "RSI完了 iters=$rsiIters 必須=${session.bestReport.hard} " +
+                    "covU=${session.bestReport.breakdown["covU"] ?: 0} " +
+                    "c3n=${session.bestReport.breakdown["c3n"] ?: 0} " +
+                    "covO=${session.bestReport.breakdown["covO"] ?: 0}",
+            )
+        }
         emit("rsi", iters = rsiIters)
 
         // ALNS + VNS（フォーク元分解・論文近傍）
