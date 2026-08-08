@@ -19,6 +19,7 @@ import com.magi.app.v6.engine.SearchProgress
 import com.magi.app.v6.engine.SearchProgressListener
 import com.magi.app.v6.engine.AppVersion
 import com.magi.app.v6.engine.OptimizeBenchLog
+import com.magi.app.v6.engine.UnimprovableConstraints
 import com.magi.app.v6.engine.adapters.ScheduleImprover
 import com.magi.app.v6.engine.c1.C1JointLnsEngine
 import com.magi.app.v6.engine.nativex.NativeBridgeProbe
@@ -124,6 +125,11 @@ object FullOptimizePipeline {
 
         try {
             val startReport = evaluate(schedule0)
+            var unimprovable = UnimprovableConstraints.analyze(problem, schedule0, startReport)
+            android.util.Log.i(
+                "MAGI",
+                "STAGE unimprovable exclude=${unimprovable.excludeFamilies} provenHard=${unimprovable.provenHardUnits}",
+            )
             OptimizeBenchLog.phase(
                 engine = OptimizeBenchLog.ENGINE_REBUILD,
                 phase = "start",
@@ -165,6 +171,7 @@ object FullOptimizePipeline {
                 postReserveMs = options.postReserveMs,
                 seed = baseSeed,
                 shouldStop = shouldStop,
+                infeasibleFamilies = unimprovable.excludeFamilies,
             )
             if (parallel && fullEvalHandle != 0L && com.magi.app.v6.NativeGate.usable) {
                 com.magi.app.v6.NativeFullEval.attach(fullEvalHandle)
@@ -195,6 +202,12 @@ object FullOptimizePipeline {
                         }.getOrNull()
                     } else null
                 } else null
+            // 本走後に再判定（動いた不足と、なお塞がっている HARD を分離）
+            unimprovable = UnimprovableConstraints.analyze(problem, art.schedule, art.report)
+            android.util.Log.i(
+                "MAGI",
+                "STAGE unimprovable-after-main exclude=${unimprovable.excludeFamilies} provenHard=${unimprovable.provenHardUnits} hard=${art.report.hard}",
+            )
             if (!shouldStop() && art.report.hard > 0 && options.hardResidualMs > 0L) {
                 onProgress?.invoke(
                     SearchProgress("hard_residual", art.report, 0L, 0L, art.schedule),
@@ -220,6 +233,7 @@ object FullOptimizePipeline {
                     postReserveMs = (options.hardResidualMs / 10).coerceAtLeast(1L),
                     seed = baseSeed xor 0x11A11D11L,
                     shouldStop = shouldStop,
+                    infeasibleFamilies = unimprovable.excludeFamilies,
                 )
                 OptimizeBenchLog.phase(
                     engine = OptimizeBenchLog.ENGINE_REBUILD,
@@ -250,6 +264,13 @@ object FullOptimizePipeline {
             }
 
             val finalReport = evaluate(art.schedule)
+            val finalUnimp = UnimprovableConstraints.analyze(problem, art.schedule, finalReport)
+            android.util.Log.i(
+                "MAGI",
+                "STAGE unimprovable-final provenHard=${finalUnimp.provenHardUnits} " +
+                    "exclude=${finalUnimp.excludeFamilies} hard=${finalReport.hard} " +
+                    "notes=${finalUnimp.findings.size}",
+            )
         WeightAuditLog.logContribution("final", finalReport)
             val elapsed = System.currentTimeMillis() - wall0
             OptimizeBenchLog.phase(
