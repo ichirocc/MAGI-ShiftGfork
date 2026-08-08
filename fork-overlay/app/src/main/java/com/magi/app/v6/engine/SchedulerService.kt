@@ -217,7 +217,31 @@ emit("rsi", iters = rsiIters)
         }
 
 
-        val (sessionAfter, stopG3) = G3FamilyPolish(g3Backend, problem, rng).run(
+
+        // 前後左右・過去未来 + 高速制約研磨（HARD 残差をさらに削る）
+        if (!stopSearch()) {
+            val polishMs = minOf(8_000L, (postDl - System.currentTimeMillis()).coerceAtLeast(0L))
+            if (polishMs > 500L) {
+                val polishDl = System.currentTimeMillis() + polishMs
+                android.util.Log.i("MAGI", "STAGE dir-polish-enter ms=$polishMs hard=${session.bestReport.hard}")
+                var dirAcc = 0
+                var guard = 0
+                while (System.currentTimeMillis() < polishDl && !stopSearch() && guard++ < 400) {
+                    val mv = DirectionalPolish.proposeAny(session, problem, rng) ?: break
+                    if (mv.baseVersion != session.version) continue
+                    val r = session.tryTransition(mv, TransitionMode.STRICT)
+                    if (r is TransitionResult.AcceptedBest || r is TransitionResult.AcceptedCurrent) dirAcc++
+                }
+                val fastAcc = runCatching {
+                    FastConstraintPolish(problem, rng).polishAll(session, polishDl)
+                }.getOrDefault(0)
+                g4.considerStrict(session.best, session.bestReport)
+                android.util.Log.i("MAGI", "STAGE dir-polish-exit dirAcc=$dirAcc fastAcc=$fastAcc hard=${session.bestReport.hard}")
+                emit("dir-polish", iters = (dirAcc + fastAcc).toLong())
+            }
+        }
+
+                val (sessionAfter, stopG3) = G3FamilyPolish(g3Backend, problem, rng).run(
             session,
             G3Params(
                 deadlineMs = postDl,
