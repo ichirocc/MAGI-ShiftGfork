@@ -84,7 +84,7 @@ class SimpleRsi(
                     else -> fails + 1
                 }
                 if (hardAfter < hardBefore) {
-                    android.util.Log.i("MAGI_RSI", "HARD improve $hardBefore -> $hardAfter focus=$focus src=${move.source} tag=${move.tag}")
+                    android.util.Log.i("MAGI_RSI", "HARD improve $hardBefore -> $hardAfter focus=$focus src=${move.source} family=${move.family}")
                 }
             }
             if (fails >= failRotate) {
