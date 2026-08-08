@@ -1,7 +1,6 @@
 package com.magi.app.v6.engine
 
 import com.magi.app.v6.Problem
-import com.magi.app.v6.MirrorLog
 import com.magi.app.v6.ViolationReport
 import com.magi.app.v6.engine.nativex.NativeWritesProbe
 import com.magi.app.v6.engine.nativex.tryTransitionStrictWithOptionalNativeSkip
@@ -102,13 +101,7 @@ class SimpleRsi(
             }
         }
         android.util.Log.i("MAGI_RSI", "end focus=$focus iters=$iters acc=$accepts rej=$rejects null=$nullMoves rot=$rotates hard=$hard0->${session.currentReport.hard} soft=$soft0->${session.currentReport.soft}")
-        runCatching {
-            MirrorLog.emit(
-                "I",
-                "RSI focus=$focus iters=$iters acc=$accepts rej=$rejects null=$nullMoves " +
-                    "必須=$hard0→${session.currentReport.hard} soft=$soft0→${session.currentReport.soft}",
-            )
-        }
+        
         return iters
     }
 
