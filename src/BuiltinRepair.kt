@@ -14,18 +14,23 @@ class FocusAwareFixProvider(
 ) : FocusFixProvider {
 
     override fun propose(focus: String?, board: BoardView, problem: Problem, rng: Random): Move? {
-        // C1 日次一括（高精度・低評価回数）を coverage 系で優先
+        // covU/covO は shiftDemand の不足・過多セルを直接狙う（乱択日は最後）
         when (focus) {
-            "covU", "shiftU", "c1", "groupViol" -> {
-                val d = rng.nextInt(problem.T)
-                val need = problem.dayDemand[d]
-                C1PrecisionMoves.fillCoverageDay(board, problem, d, need, rng)?.let { return it }
+            "covU", "shiftU", "groupViol" -> {
+                proposeShiftCoverageUnder(board, rng)?.let { return it }
+                proposeCoverage(board, rng)?.let { return it }
+                val d = rng.nextInt(problem.T.coerceAtLeast(1))
+                C1PrecisionMoves.fillCoverageDay(board, problem, d, problem.dayDemand.getOrElse(d) { 0 }, rng)?.let { return it }
                 C1PrecisionMoves.fillGroupDay(board, problem, d, rng)?.let { return it }
             }
             "covO", "c2" -> {
-                val d = rng.nextInt(problem.T)
-                val need = problem.dayDemand[d]
-                C1PrecisionMoves.trimCoverageDay(board, problem, d, need, rng)?.let { return it }
+                proposeShiftCoverageOver(board, rng)?.let { return it }
+                proposeCoverageOver(board, rng)?.let { return it }
+                val d = rng.nextInt(problem.T.coerceAtLeast(1))
+                C1PrecisionMoves.trimCoverageDay(board, problem, d, problem.dayDemand.getOrElse(d) { 0 }, rng)?.let { return it }
+            }
+            "c1" -> {
+                ConstraintPolishers.propose(focus, board, problem, rng)?.let { return it }
             }
         }
         if (focus != null) {
@@ -34,21 +39,120 @@ class FocusAwareFixProvider(
         return proposeRandom(board, rng)
     }
 
+    /** シフト別需要の不足 (d,k) を直接埋める */
+    private fun proposeShiftCoverageUnder(board: BoardView, rng: Random): Move? {
+        val sd = problem.shiftDemand ?: return null
+        val have = Array(problem.T) { IntArray(problem.K) }
+        for (s in 0 until problem.S) {
+            for (d in 0 until problem.T) {
+                val k = board.current[s][d]
+                if (k in 0 until problem.K) have[d][k]++
+            }
+        }
+        data class Def(val d: Int, val k: Int, val deficit: Int)
+        val defs = ArrayList<Def>()
+        for (d in 0 until problem.T) {
+            val row = sd.getOrNull(d) ?: continue
+            for (k in 0 until minOf(problem.K, row.size)) {
+                val need = row[k]
+                if (need > 0 && have[d][k] < need) {
+                    defs.add(Def(d, k, need - have[d][k]))
+                }
+            }
+        }
+        if (defs.isEmpty()) return null
+        defs.shuffle(rng)
+        defs.sortByDescending { it.deficit }
+        for (def in defs) {
+            val d = def.d
+            val k = def.k
+            val staffs = (0 until problem.S).filter {
+                !problem.wishLocked(it, d) && problem.canDo(it, k) && board.current[it][d] != k
+            }.shuffled(rng)
+            // 過多シフトにいる人を優先して不足シフトへ
+            val ordered = staffs.sortedBy { s ->
+                val cur = board.current[s][d]
+                if (cur !in 0 until problem.K) return@sortedBy 1
+                val needCur = sd.getOrNull(d)?.getOrNull(cur) ?: 0
+                val haveCur = have[d][cur]
+                when {
+                    needCur > 0 && haveCur > needCur -> 0
+                    needCur <= 0 -> 1
+                    else -> 2
+                }
+            }
+            for (s in ordered) {
+                return buildSingleMove(board, problem, s, d, k, "g2.covU.shift")
+            }
+        }
+        return null
+    }
+
+    /** シフト別需要の過多から別シフトへ（休を含む通常シフト） */
+    private fun proposeShiftCoverageOver(board: BoardView, rng: Random): Move? {
+        val sd = problem.shiftDemand ?: return null
+        val have = Array(problem.T) { IntArray(problem.K) }
+        for (s in 0 until problem.S) {
+            for (d in 0 until problem.T) {
+                val k = board.current[s][d]
+                if (k in 0 until problem.K) have[d][k]++
+            }
+        }
+        data class Over(val d: Int, val k: Int, val excess: Int)
+        val overs = ArrayList<Over>()
+        for (d in 0 until problem.T) {
+            val row = sd.getOrNull(d) ?: continue
+            for (k in 0 until minOf(problem.K, row.size)) {
+                val need = row[k]
+                if (have[d][k] > need) overs.add(Over(d, k, have[d][k] - need))
+            }
+        }
+        if (overs.isEmpty()) return null
+        overs.shuffle(rng)
+        overs.sortByDescending { it.excess }
+        for (ov in overs) {
+            val d = ov.d
+            val k = ov.k
+            val staffs = (0 until problem.S).filter {
+                !problem.wishLocked(it, d) && board.current[it][d] == k
+            }.shuffled(rng)
+            for (s in staffs) {
+                val alt = problem.allowedShiftsForStaff(s).filter { it != k }
+                if (alt.isEmpty()) continue
+                // 不足シフトを優先
+                val prefer = alt.sortedBy { nk ->
+                    val need = sd.getOrNull(d)?.getOrNull(nk) ?: 0
+                    val hv = if (nk in 0 until problem.K) have[d][nk] else 0
+                    if (need > hv) 0 else 1
+                }
+                return buildSingleMove(board, problem, s, d, prefer[0], "g2.covO.shift")
+            }
+        }
+        return null
+    }
+
     private fun proposeCoverage(board: BoardView, rng: Random): Move? {
+        // shiftDemand が無い場合の日次需要フォールバック
         val need = problem.dayDemand
         val have = IntArray(problem.T)
         for (i in 0 until problem.S) {
-            for (j in 0 until problem.T) if (board.current[i][j] > 0) have[j]++
+            for (j in 0 until problem.T) {
+                val k = board.current[i][j]
+                if (k in 0 until problem.K) have[j]++
+            }
         }
-        val days = (0 until problem.T).filter { need[it] > 0 && have[it] < need[it] }.shuffled(rng)
+        val days = (0 until problem.T).filter {
+            it < need.size && need[it] > 0 && have[it] < need[it]
+        }.shuffled(rng)
         for (d in days) {
             val staffs = (0 until problem.S).filter {
-                !problem.wishLocked(it, d) && board.current[it][d] == 0
+                !problem.wishLocked(it, d)
             }.shuffled(rng)
             for (s in staffs) {
                 val work = ShiftKinds.preferOnDuty(problem, s)
                 if (work.isEmpty()) continue
                 val sh = work[rng.nextInt(work.size)]
+                if (board.current[s][d] == sh) continue
                 return buildSingleMove(board, problem, s, d, sh, "g2.covU")
             }
         }
@@ -56,20 +160,24 @@ class FocusAwareFixProvider(
     }
 
     private fun proposeCoverageOver(board: BoardView, rng: Random): Move? {
-        // 過多日: 別シフトへ（休含む）
         val need = problem.dayDemand
         val have = IntArray(problem.T)
         for (i in 0 until problem.S) {
-            for (j in 0 until problem.T) if (board.current[i][j] > 0) have[j]++
+            for (j in 0 until problem.T) {
+                val k = board.current[i][j]
+                if (k in 0 until problem.K) have[j]++
+            }
         }
-        val days = (0 until problem.T).filter { need[it] > 0 && have[it] > need[it] }.shuffled(rng)
+        val days = (0 until problem.T).filter {
+            it < need.size && need[it] > 0 && have[it] > need[it]
+        }.shuffled(rng)
         for (d in days) {
             val staffs = (0 until problem.S).filter {
-                !problem.wishLocked(it, d) && board.current[it][d] > 0
+                !problem.wishLocked(it, d)
             }.shuffled(rng)
             for (s in staffs) {
                 val cur = board.current[s][d]
-                val alt = problem.allowedShiftsForStaff(s).filter { it != cur } // 休含む
+                val alt = problem.allowedShiftsForStaff(s).filter { it != cur }
                 if (alt.isEmpty()) continue
                 return buildSingleMove(board, problem, s, d, alt[rng.nextInt(alt.size)], "g2.covO")
             }
