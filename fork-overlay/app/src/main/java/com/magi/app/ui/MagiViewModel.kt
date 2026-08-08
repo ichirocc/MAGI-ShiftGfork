@@ -1082,7 +1082,11 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                                         lastPhaseLogMs = now
                                         logOp(
                                             "I",
-                                            "進捗 ${sp.phase} 必須=$hard 合計=$total iters=${sp.iters} 経過${wall / 1000}s",
+                                            if (sp.phase.startsWith("unimprovable")) {
+                                                "探索不能制約の判定 必須=$hard 合計=$total（希望固定・担当不足など）"
+                                            } else {
+                                                "進捗 ${sp.phase} 必須=$hard 合計=$total iters=${sp.iters} 経過${wall / 1000}s"
+                                            },
                                         )
                                     }
                                 }
