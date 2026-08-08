@@ -147,7 +147,7 @@ object FullOptimizePipeline {
                 c3 = c3,
                 personal = personal,
                 workers = options.workers.coerceIn(1, 16),
-                nativeProbe = if (options.workers > 1) null else probe,
+                nativeProbe = probe, // 並列本体は Kotlin-only。probe は G1 refine / RSI 以降で使用
                 progressListener = listener,
                 requireWeights = true,
             )
