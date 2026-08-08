@@ -9,6 +9,7 @@ import java.util.Random
 /**
  * RSI: HARD 族を優先して STRICT 修復。
  * breakdown が空・全 exclude でも hardPrefer を巡回して 0 iters 即終了しない。
+ * デバッグ: tag MAGI_RSI
  */
 class SimpleRsi(
     private val problem: Problem,
@@ -27,26 +28,43 @@ class SimpleRsi(
     private val hardPrefer = listOf("groupViol", "c3n", "covU", "pref", "covO", "c2", "low", "high")
 
     fun run(params: Params, rng: Random): Long {
-        if (!ProblemGuards.isRunnable(problem)) return 0L
-        if (params.budgetMs <= 0L && params.maxIters <= 0L) return 0L
+        if (!ProblemGuards.isRunnable(problem)) {
+            println("[MAGI_RSI] skip not-runnable")
+            return 0L
+        }
+        if (params.budgetMs <= 0L && params.maxIters <= 0L) {
+            println("[MAGI_RSI] skip budget=0")
+            return 0L
+        }
         val failRotate = params.failRotate.coerceAtLeast(1)
         val deadline = System.currentTimeMillis() + params.budgetMs.coerceAtLeast(0L)
         var iters = 0L
+        var accepts = 0L
+        var rejects = 0L
+        var nullMoves = 0L
+        var rotates = 0
         var focus = pickFocus(session.currentReport, params.infeasible, rng)
             ?: hardPrefer.firstOrNull { it !in params.infeasible }
             ?: "covU"
         var fails = 0
         var rotateIdx = 0
-        println("[MAGI] STAGE rsi-focus-start focus=$focus hard=${session.currentReport.hard}")
+        val hard0 = session.currentReport.hard
+        val soft0 = session.currentReport.soft
+        println("[MAGI_RSI] start focus=$focus hard=$hard0 soft=$soft0 budgetMs=${params.budgetMs} native=${params.nativeProbe != null}")
+        var lastBeat = System.currentTimeMillis()
         while (System.currentTimeMillis() < deadline && !params.shouldStop()) {
             if (params.maxIters > 0L && iters >= params.maxIters) break
             iters++
             val move = fixProvider.propose(focus, session, problem, rng)
             if (move == null) {
+                nullMoves++
                 fails++
                 if (fails >= failRotate) {
+                    val prev = focus
                     focus = rotateFocus(session.currentReport, params.infeasible, focus, rotateIdx++, rng)
+                    rotates++
                     fails = 0
+                    println("[MAGI_RSI] rotate(nullMoves) $prev -> $focus")
                 }
                 continue
             }
@@ -54,8 +72,10 @@ class SimpleRsi(
             val hardBefore = session.currentReport.hard
             val r = session.tryTransitionStrictWithOptionalNativeSkip(move, params.nativeProbe)
             if (r is TransitionResult.Rejected) {
+                rejects++
                 fails++
             } else {
+                accepts++
                 val after = familyCount(session.currentReport, focus)
                 val hardAfter = session.currentReport.hard
                 fails = when {
@@ -63,13 +83,24 @@ class SimpleRsi(
                     after < before -> 0
                     else -> fails + 1
                 }
+                if (hardAfter < hardBefore) {
+                    println("[MAGI_RSI] HARD improve $hardBefore -> $hardAfter focus=$focus")
+                }
             }
             if (fails >= failRotate) {
+                val prev = focus
                 focus = rotateFocus(session.currentReport, params.infeasible, focus, rotateIdx++, rng)
+                rotates++
                 fails = 0
+                println("[MAGI_RSI] rotate(fails) $prev -> $focus")
+            }
+            val now = System.currentTimeMillis()
+            if (now - lastBeat >= 3_000L) {
+                lastBeat = now
+                println("[MAGI_RSI] beat focus=$focus iters=$iters acc=$accepts rej=$rejects hard=${session.currentReport.hard}")
             }
         }
-        println("[MAGI] STAGE rsi-focus-end focus=$focus iters=$iters hard=${session.currentReport.hard}")
+        println("[MAGI_RSI] end iters=$iters acc=$accepts rej=$rejects hard=$hard0->${session.currentReport.hard}")
         return iters
     }
 
@@ -86,7 +117,6 @@ class SimpleRsi(
             }
         }
         if (best != null) return best
-        // breakdown に載らない HARD 残向けフォールバック
         if (report.hard > 0) {
             val cand = hardPrefer.filter { it !in exclude }
             if (cand.isNotEmpty()) return cand[rng.nextInt(cand.size)]
