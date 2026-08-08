@@ -219,11 +219,11 @@ object UnimprovableConstraints {
         if (blocked == 0) return emptyList()
         if (open == 0) {
             return listOf(
-                Finding("covO", true, "ALL: $blocked excess locked on over-staffed cells", blocked),
+                Finding("covO", false, "ALL: $blocked excess locked on over-staffed cells", blocked),
             )
         }
         return listOf(
-            Finding("covO", true, "PARTIAL: blocked=$blocked open=$open", blocked),
+            Finding("covO", false, "PARTIAL: blocked=$blocked open=$open", blocked),
         )
     }
 
