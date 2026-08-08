@@ -40,7 +40,7 @@ object FullOptimizePipeline {
         val workers: Int = 1,
         val autoNative: Boolean = false,
         val generateInitialIfNeeded: Boolean = true,
-        val hardResidualMs: Long = 40_000L,
+        val hardResidualMs: Long = 50_000L,
     )
 
     fun isBlankSchedule(schedule: Array<IntArray>): Boolean {
@@ -215,8 +215,9 @@ object FullOptimizePipeline {
                     requireWeights = true,
                 ).optimize(
                     initial = art.schedule,
+                    // 残差は探索寄り（post を薄く）→ RSI/ALNS に時間を回す
                     totalBudgetMs = options.hardResidualMs,
-                    postReserveMs = (options.hardResidualMs / 5).coerceAtLeast(1L),
+                    postReserveMs = (options.hardResidualMs / 10).coerceAtLeast(1L),
                     seed = baseSeed xor 0x11A11D11L,
                     shouldStop = shouldStop,
                 )
@@ -228,6 +229,11 @@ object FullOptimizePipeline {
                     seed = baseSeed,
                     workers = 1,
                     budgetMs = options.hardResidualMs,
+                )
+                android.util.Log.i(
+                    "MAGI",
+                    "STAGE residual-done hard=${art.report.hard}->${residual.report.hard} " +
+                        "soft=${art.report.soft}->${residual.report.soft}",
                 )
                 onProgress?.invoke(
                     SearchProgress(
