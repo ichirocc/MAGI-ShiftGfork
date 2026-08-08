@@ -197,16 +197,7 @@ class SchedulerService(
         )
         g4.considerStrict(session.best, session.bestReport)
         android.util.Log.i("MAGI", "STAGE rsi-exit iters=$rsiIters hard=${session.bestReport.hard}")
-        runCatching {
-            MirrorLog.emit(
-                "I",
-                "RSI完了 iters=$rsiIters 必須=${session.bestReport.hard} " +
-                    "covU=${session.bestReport.breakdown["covU"] ?: 0} " +
-                    "c3n=${session.bestReport.breakdown["c3n"] ?: 0} " +
-                    "covO=${session.bestReport.breakdown["covO"] ?: 0}",
-            )
-        }
-        emit("rsi", iters = rsiIters)
+emit("rsi", iters = rsiIters)
 
         // ALNS + VNS（フォーク元分解・論文近傍）
         if (!stopSearch() && alnsMs > 0L) {
