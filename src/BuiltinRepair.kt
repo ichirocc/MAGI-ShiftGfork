@@ -41,7 +41,11 @@ class FocusAwareFixProvider(
 
     /** シフト別需要の不足 (d,k) を直接埋める */
     private fun proposeShiftCoverageUnder(board: BoardView, rng: Random): Move? {
-        val sd = problem.shiftDemand ?: return null
+        val sd = problem.shiftDemand
+        if (sd == null) {
+            println("[MAGI_FIX] covU shiftDemand=null")
+            return null
+        }
         val have = Array(problem.T) { IntArray(problem.K) }
         for (s in 0 until problem.S) {
             for (d in 0 until problem.T) {
@@ -61,6 +65,7 @@ class FocusAwareFixProvider(
             }
         }
         if (defs.isEmpty()) return null
+        println("[MAGI_FIX] covU deficits=${defs.size}")
         defs.shuffle(rng)
         defs.sortByDescending { it.deficit }
         for (def in defs) {
