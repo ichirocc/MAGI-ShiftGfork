@@ -1,6 +1,8 @@
 package com.magi.app.v6.engine
 
 import com.magi.app.v6.Problem
+import com.magi.app.v6.shiftDemand
+import com.magi.app.v6.dayDemand
 import com.magi.app.v6.constraintConfig
 import com.magi.app.v6.ViolationReport
 
