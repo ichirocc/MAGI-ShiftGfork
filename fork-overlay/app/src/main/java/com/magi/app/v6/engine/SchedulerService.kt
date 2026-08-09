@@ -50,14 +50,18 @@ class SchedulerService(
         val postDl = profile.postDeadline(started)
         var session = SearchSessionFull(problem, initial, evaluate, better, deltaHook = deltaHook)
         val g4 = G4Diversify(better)
-        fun emit(phase: String, iters: Long = 0L, withSchedule: Boolean = true) {
+        fun emit(phase: String, iters: Long = 0L, withSchedule: Boolean = true, note: String = "") {
             val bd = session.bestReport.breakdown
             val hardBits = listOf("covU", "covO", "c3n", "groupViol", "pref").joinToString(",") { k ->
                 "$k=${bd[k] ?: 0}"
             }
+            val softBits = listOf("weekly", "c3", "c3m", "apt", "low").joinToString(",") { k ->
+                "$k=${bd[k] ?: 0}"
+            }
+            val detail = note.ifEmpty { "hard{$hardBits} soft{$softBits}" }
             android.util.Log.i(
                 "MAGI",
-                "探索フェーズ: rebuild-$phase 必須=${session.bestReport.hard} soft=${session.bestReport.soft} 合計=${session.bestReport.total} iters=$iters $hardBits",
+                "探索フェーズ: rebuild-$phase 必須=${session.bestReport.hard} soft=${session.bestReport.soft} 合計=${session.bestReport.total} iters=$iters $detail",
             )
 
             val elapsed = System.currentTimeMillis() - started
@@ -71,6 +75,7 @@ class SchedulerService(
                 seed = baseSeed,
                 workers = workers,
                 budgetMs = profile.totalBudgetMs,
+                note = detail,
             )
             progressListener?.onProgress(
                 SearchProgress(
@@ -184,7 +189,11 @@ class SchedulerService(
             android.util.Log.i("MAGI_DELTA", GlobalNativeSkipGate.gate.stats())
         return session.snapshotBest(stopReason = StopReason.FIXED_POINT)
         }
-        android.util.Log.i("MAGI", "STAGE rsi-enter budgetMs=$rsiMs hard=${session.bestReport.hard}")
+        val hasSd = try { problem.shiftDemand != null } catch (_: Throwable) { false }
+        android.util.Log.i(
+            "MAGI",
+            "STAGE rsi-enter budgetMs=$rsiMs hard=${session.bestReport.hard} shiftDemand=$hasSd native=${nativeProbe != null} infeasible=$infeasible",
+        )
         val rsiIters = SimpleRsi(problem, session, fixProvider).run(
             SimpleRsi.Params(
                 budgetMs = rsiMs,
