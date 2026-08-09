@@ -126,9 +126,22 @@ object FullOptimizePipeline {
         try {
             val startReport = evaluate(schedule0)
             var unimprovable = UnimprovableConstraints.analyze(problem, schedule0, startReport)
+            val unimpNote = unimprovable.findings.joinToString(";") { f ->
+                "${f.family}:${if (f.hard) "H" else "S"}:${f.count}:${f.reason.take(40)}"
+            }.ifEmpty { "none" }
             android.util.Log.i(
                 "MAGI",
-                "STAGE unimprovable exclude=${unimprovable.excludeFamilies} provenHard=${unimprovable.provenHardUnits}",
+                "STAGE unimprovable exclude=${unimprovable.excludeFamilies} provenHard=${unimprovable.provenHardUnits} detail=$unimpNote",
+            )
+            OptimizeBenchLog.phase(
+                engine = OptimizeBenchLog.ENGINE_REBUILD,
+                phase = "unimprovable",
+                report = startReport,
+                elapsedMs = System.currentTimeMillis() - wall0,
+                seed = baseSeed,
+                workers = options.workers,
+                budgetMs = options.budgetMs,
+                note = "exclude=${unimprovable.excludeFamilies} proven=${unimprovable.provenHardUnits} $unimpNote",
             )
             OptimizeBenchLog.phase(
                 engine = OptimizeBenchLog.ENGINE_REBUILD,
