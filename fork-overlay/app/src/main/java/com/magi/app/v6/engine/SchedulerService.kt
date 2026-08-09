@@ -7,6 +7,7 @@ import com.magi.app.v6.engine.nativex.GlobalNativeSkipGate
 
 import com.magi.app.v6.MirrorLog
 import com.magi.app.v6.Problem
+import com.magi.app.v6.shiftDemand
 import com.magi.app.v6.ViolationReport
 
 import com.magi.app.v6.engine.parallel.ParallelSaCoordinator
