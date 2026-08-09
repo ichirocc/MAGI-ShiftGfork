@@ -4,6 +4,8 @@ import com.magi.app.v6.Problem
 import com.magi.app.v6.wishLocked
 import com.magi.app.v6.canDo
 import com.magi.app.v6.allowedShiftsForStaff
+import com.magi.app.v6.dayDemand
+import com.magi.app.v6.shiftDemand
 import com.magi.app.v6.skillMatrix
 import com.magi.app.v6.ViolationReport
 import java.util.Random
@@ -23,14 +25,14 @@ class FocusAwareFixProvider(
                 proposeShiftCoverageUnder(board, rng)?.let { return it }
                 proposeCoverage(board, rng)?.let { return it }
                 val d = rng.nextInt(problem.T.coerceAtLeast(1))
-                C1PrecisionMoves.fillCoverageDay(board, problem, d, problem.dayDemand.getOrElse(d) { 0 }, rng)?.let { return it }
+                C1PrecisionMoves.fillCoverageDay(board, problem, d, dayDemandAt(problem, d), rng)?.let { return it }
                 C1PrecisionMoves.fillGroupDay(board, problem, d, rng)?.let { return it }
             }
             "covO", "c2" -> {
                 proposeShiftCoverageOver(board, rng)?.let { return it }
                 proposeCoverageOver(board, rng)?.let { return it }
                 val d = rng.nextInt(problem.T.coerceAtLeast(1))
-                C1PrecisionMoves.trimCoverageDay(board, problem, d, problem.dayDemand.getOrElse(d) { 0 }, rng)?.let { return it }
+                C1PrecisionMoves.trimCoverageDay(board, problem, d, dayDemandAt(problem, d), rng)?.let { return it }
             }
             "c1" -> {
                 ConstraintPolishers.propose(focus, board, problem, rng)?.let { return it }
@@ -40,6 +42,18 @@ class FocusAwareFixProvider(
             ConstraintPolishers.propose(focus, board, problem, rng)?.let { return it }
         }
         return proposeRandom(board, rng)
+    }
+
+    private fun dayDemandAt(problem: Problem, d: Int): Int {
+        val dd = problem.dayDemand
+        return if (d in dd.indices) dd[d] else 0
+    }
+
+    private fun shiftNeed(problem: Problem, d: Int, k: Int): Int {
+        val sd = problem.shiftDemand ?: return 0
+        if (d !in sd.indices) return 0
+        val row = sd[d]
+        return if (k in row.indices) row[k] else 0
     }
 
     /** シフト別需要の不足 (d,k) を直接埋める */
@@ -56,14 +70,14 @@ class FocusAwareFixProvider(
                 if (k in 0 until problem.K) have[d][k]++
             }
         }
-        data class Def(val d: Int, val k: Int, val deficit: Int)
-        val defs = ArrayList<Def>()
+        val defs = ArrayList<IntArray>() // [d, k, deficit]
         for (d in 0 until problem.T) {
-            val row = sd.getOrNull(d) ?: continue
+            if (d !in sd.indices) continue
+            val row = sd[d]
             for (k in 0 until minOf(problem.K, row.size)) {
                 val need = row[k]
                 if (need > 0 && have[d][k] < need) {
-                    defs.add(Def(d, k, need - have[d][k]))
+                    defs.add(intArrayOf(d, k, need - have[d][k]))
                 }
             }
         }
@@ -71,25 +85,26 @@ class FocusAwareFixProvider(
             android.util.Log.d("MAGI_FIX", "covU no shift deficits")
             return null
         }
-        android.util.Log.d("MAGI_FIX", "covU deficits=${defs.size} top=${defs.maxByOrNull { it.deficit }}")
+        android.util.Log.d("MAGI_FIX", "covU deficits=${defs.size}")
         defs.shuffle(rng)
-        defs.sortByDescending { it.deficit }
+        defs.sortByDescending { it[2] }
         for (def in defs) {
-            val d = def.d
-            val k = def.k
-            val staffs = (0 until problem.S).filter {
-                !problem.wishLocked(it, d) && problem.canDo(it, k) && board.current[it][d] != k
+            val d = def[0]
+            val k = def[1]
+            val staffs = (0 until problem.S).filter { s ->
+                !problem.wishLocked(s, d) && problem.canDo(s, k) && board.current[s][d] != k
             }.shuffled(rng)
-            // 過多シフトにいる人を優先して不足シフトへ
-            val ordered = staffs.sortedBy { s: Int ->
+            val ordered = staffs.sortedBy { s ->
                 val cur = board.current[s][d]
-                if (cur !in 0 until problem.K) return@sortedBy 1
-                val needCur = if (d < sd.size && cur < sd[d].size) sd[d][cur] else 0
-                val haveCur = have[d][cur]
-                when {
-                    needCur > 0 && haveCur > needCur -> 0
-                    needCur <= 0 -> 1
-                    else -> 2
+                if (cur !in 0 until problem.K) 1
+                else {
+                    val needCur = shiftNeed(problem, d, cur)
+                    val haveCur = have[d][cur]
+                    when {
+                        needCur > 0 && haveCur > needCur -> 0
+                        needCur <= 0 -> 1
+                        else -> 2
+                    }
                 }
             }
             for (s in ordered) {
@@ -110,30 +125,29 @@ class FocusAwareFixProvider(
                 if (k in 0 until problem.K) have[d][k]++
             }
         }
-        data class Over(val d: Int, val k: Int, val excess: Int)
-        val overs = ArrayList<Over>()
+        val overs = ArrayList<IntArray>() // [d,k,excess]
         for (d in 0 until problem.T) {
-            val row = sd.getOrNull(d) ?: continue
+            if (d !in sd.indices) continue
+            val row = sd[d]
             for (k in 0 until minOf(problem.K, row.size)) {
                 val need = row[k]
-                if (have[d][k] > need) overs.add(Over(d, k, have[d][k] - need))
+                if (have[d][k] > need) overs.add(intArrayOf(d, k, have[d][k] - need))
             }
         }
         if (overs.isEmpty()) return null
         overs.shuffle(rng)
-        overs.sortByDescending { it.excess }
+        overs.sortByDescending { it[2] }
         for (ov in overs) {
-            val d = ov.d
-            val k = ov.k
-            val staffs = (0 until problem.S).filter {
-                !problem.wishLocked(it, d) && board.current[it][d] == k
+            val d = ov[0]
+            val k = ov[1]
+            val staffs = (0 until problem.S).filter { s ->
+                !problem.wishLocked(s, d) && board.current[s][d] == k
             }.shuffled(rng)
             for (s in staffs) {
                 val alt = problem.allowedShiftsForStaff(s).filter { it != k }
                 if (alt.isEmpty()) continue
-                // 不足シフトを優先
-                val prefer = alt.sortedBy { nk: Int ->
-                    val need = if (d < sd.size && nk < sd[d].size) sd[d][nk] else 0
+                val prefer = alt.sortedBy { nk ->
+                    val need = shiftNeed(problem, d, nk)
                     val hv = if (nk in 0 until problem.K) have[d][nk] else 0
                     if (need > hv) 0 else 1
                 }
