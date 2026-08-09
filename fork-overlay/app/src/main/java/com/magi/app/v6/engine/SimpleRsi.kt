@@ -101,6 +101,10 @@ class SimpleRsi(
             }
         }
         android.util.Log.i("MAGI_RSI", "end focus=$focus iters=$iters acc=$accepts rej=$rejects null=$nullMoves rot=$rotates hard=$hard0->${session.currentReport.hard} soft=$soft0->${session.currentReport.soft}")
+        android.util.Log.i(
+            "MAGI",
+            "VERIFY rsi focus=$focus iters=$iters acc=$accepts rej=$rejects null=$nullMoves rot=$rotates hard=$hard0->${session.currentReport.hard} soft=$soft0->${session.currentReport.soft}",
+        )
         
         return iters
     }
