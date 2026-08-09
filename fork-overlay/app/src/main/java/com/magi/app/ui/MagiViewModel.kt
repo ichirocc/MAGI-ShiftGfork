@@ -1078,16 +1078,31 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                                         )
                                     }
                                     val now = System.currentTimeMillis()
-                                    if (now - lastPhaseLogMs >= 3_000L) {
+                                    val bd = rep.breakdown
+                                    val bits = listOf("covU", "c3n", "covO", "weekly", "c3", "apt").joinToString(" ") { k ->
+                                        "$k=${bd[k] ?: 0}"
+                                    }
+                                    val milestone = sp.phase in setOf(
+                                        "start", "g1", "g1-parallel", "rsi", "alns", "vns",
+                                        "dir-polish", "g3", "g4", "residual", "done",
+                                        "hard_residual", "unimprovable",
+                                    ) || sp.phase.startsWith("unimprovable") || sp.phase.startsWith("g1")
+                                    // マイルストーンは間引きせず、通常進捗は3秒に1回
+                                    if (milestone || now - lastPhaseLogMs >= 3_000L) {
                                         lastPhaseLogMs = now
-                                        logOp(
-                                            "I",
-                                            if (sp.phase.startsWith("unimprovable")) {
-                                                "探索不能制約の判定 必須=$hard 合計=$total（希望固定・担当不足など）"
-                                            } else {
-                                                "進捗 ${sp.phase} 必須=$hard 合計=$total iters=${sp.iters} 経過${wall / 1000}s"
-                                            },
-                                        )
+                                        val msg = when {
+                                            sp.phase.startsWith("unimprovable") ->
+                                                "探索不能制約 必須=$hard 合計=$total $bits"
+                                            sp.phase == "rsi" ->
+                                                "進捗 rsi 必須=$hard 合計=$total iters=${sp.iters} $bits 経過${wall / 1000}s"
+                                            sp.phase == "dir-polish" ->
+                                                "進捗 dir-polish 必須=$hard 合計=$total iters=${sp.iters} $bits 経過${wall / 1000}s"
+                                            sp.phase == "residual" || sp.phase == "hard_residual" ->
+                                                "進捗 残差 必須=$hard 合計=$total iters=${sp.iters} $bits 経過${wall / 1000}s"
+                                            else ->
+                                                "進捗 ${sp.phase} 必須=$hard 合計=$total iters=${sp.iters} $bits 経過${wall / 1000}s"
+                                        }
+                                        logOp("I", msg)
                                     }
                                 }
                             },
