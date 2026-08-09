@@ -273,7 +273,7 @@ class FocusAwareFixProvider(
         val cells = ArrayList<IntArray>()
         for (i in 0 until problem.S) {
             for (j in 0 until problem.T) {
-                val pref = problem.preferred(i, j)
+                val pref = problem.preferred[i][j]
                 if (pref >= 0 && !problem.wishLocked(i, j) && board.current[i][j] != pref && problem.canDo(i, pref)) {
                     cells.add(intArrayOf(i, j, pref))
                 }
