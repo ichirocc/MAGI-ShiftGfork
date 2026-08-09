@@ -1,6 +1,7 @@
 package com.magi.app.v6.engine
 
 import com.magi.app.v6.Problem
+import com.magi.app.v6.preferred
 import com.magi.app.v6.wishLocked
 import com.magi.app.v6.canDo
 import com.magi.app.v6.allowedShiftsForStaff
@@ -269,16 +270,18 @@ class FocusAwareFixProvider(
     }
 
     private fun proposeWish(board: BoardView, rng: Random): Move? {
-        val cells = ArrayList<Pair<Int, Int>>()
-        for (i in 0 until problem.S) for (j in 0 until problem.T) {
-            val pref = problem.preferred[i][j]
-            if (pref >= 0 && !problem.wishLocked(i, j) && board.current[i][j] != pref && problem.canDo(i, pref)) {
-                cells.add(i to j)
+        val cells = ArrayList<IntArray>()
+        for (i in 0 until problem.S) {
+            for (j in 0 until problem.T) {
+                val pref = problem.preferred(i, j)
+                if (pref >= 0 && !problem.wishLocked(i, j) && board.current[i][j] != pref && problem.canDo(i, pref)) {
+                    cells.add(intArrayOf(i, j, pref))
+                }
             }
         }
         if (cells.isEmpty()) return null
-        val (s, d) = cells[rng.nextInt(cells.size)]
-        return buildSingleMove(board, problem, s, d, problem.preferred[s][d], "g2.wish")
+        val pick = cells[rng.nextInt(cells.size)]
+        return buildSingleMove(board, problem, pick[0], pick[1], pick[2], "g2.wish")
     }
 
 
