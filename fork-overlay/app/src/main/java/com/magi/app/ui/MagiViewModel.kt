@@ -106,6 +106,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             blockSwapC3nFilter = toggles.blockSwapC3nFilter,
             nativeAccel = toggles.nativeAccel,
             nativeParity = toggles.nativeParity,
+            sessionLogEnabled = toggles.sessionLogEnabled,
         )
     }
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -170,6 +171,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     private var sessionLogJob: Job? = null
 
     private fun beginSessionLog(mode: String) {
+        if (!_ui.value.sessionLogEnabled) return
         // 軽量: 同期はヘッダ1回のみ。退避は IO。
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
@@ -289,12 +291,17 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     private val opLogFmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.JAPAN)
 
     /** 操作ログに1件追記し、UIへ反映（新しい順、最大300件）。 */
-    private fun logOp(level: String, message: String) {
+    private fun logOp(level: String, message: String, force: Boolean = false) {
+        // OFF: 設定変更・エラー以外はメモリ/ファイルとも抑止（探索性能・UIノイズ低減）
+        if (!force && !_ui.value.sessionLogEnabled) {
+            if (level != "E" && !message.startsWith("設定変更")) return
+        }
         opLog.addFirst(OpLogEntry(System.currentTimeMillis(), level, message))
         while (opLog.size > 1000) opLog.removeLast()
         _ui.update { it.copy(opLog = opLog.map { "${opLogFmt.format(java.util.Date(it.timeMs))} [${it.level}] ${it.message}" }) }
-        // ファイルはバッファ＋間引き（探索スレッドを止めない）
-        appendSessionLog(level, message)
+        if (_ui.value.sessionLogEnabled || force) {
+            appendSessionLog(level, message)
+        }
     }
 
     // 操作再現用デコード（現stateを参照。staff/shift一覧は操作中に不変）。
@@ -774,6 +781,12 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setBudget(sec: Int) { val v = sec.coerceIn(10, MAX_BUDGET_SEC); _ui.update { it.copy(budgetSec = v) }; logOp("I", "設定変更: 予算 → ${v}秒") }
+    fun setSessionLogEnabled(on: Boolean) {
+        OptimizeToggleStore.put(getApplication(), OptimizeToggleStore.KEY_SESSION_LOG, on)
+        _ui.update { it.copy(sessionLogEnabled = on) }
+        logOp("I", "設定変更: ログ出力 → ${if (on) "ON" else "OFF"}", force = true)
+    }
+
     fun setSoftPolish(b: Boolean) {
         OptimizeToggleStore.put(getApplication(), OptimizeToggleStore.KEY_SOFT_POLISH, b)
         _ui.update { it.copy(softPolish = b) }
