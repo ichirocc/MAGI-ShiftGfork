@@ -2875,17 +2875,27 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exportLogs(): String? {
         val ops = _ui.value.opLog
-        // 出力は全文（非圧縮）。画面表示は圧縮版だが、監査用にはロスレスの rawDiagLogs を使う。
         val logs = rawDiagLogs.ifEmpty { _ui.value.logs }
-        if (ops.isEmpty() && logs.isEmpty()) return null
+        val savedList = listSavedSessionLogs()
+        if (ops.isEmpty() && logs.isEmpty() && savedList.isEmpty()) return null
         val ts = java.text.SimpleDateFormat("yyyy/MM/dd HH:mm:ss", java.util.Locale.JAPAN).format(java.util.Date())
         return buildString {
             append("MAGI ログ (Native)  出力: ").append(ts).append('\n')
-            append("状態: ${_ui.value.staff}名/${_ui.value.days}日 ・ 必須=${_ui.value.bestHard} 合計=${_ui.value.totalViolations}\n")
-            append("\n==== 操作ログ（新しい順 ${ops.size}件）====\n")
+            append("状態: ${_ui.value.staff}名/${_ui.value.days}日 ・ 必須=${_ui.value.bestHard} 合計=${_ui.value.totalViolations}")
+            append('\n')
+            append('\n').append("==== 操作ログ（新しい順 ${ops.size}件）====").append('\n')
             ops.forEach { append(it).append('\n') }
-            append("\n==== 診断ログ（全文 ${logs.size}件）====\n")
+            append('\n').append("==== 診断ログ（全文 ${logs.size}件）====").append('\n')
             logs.forEach { append(it).append('\n') }
+            append('\n').append("==== 保存セッションログ（${savedList.size}件）====").append('\n')
+            for (info in savedList) {
+                append("--- FILE ").append(info.name)
+                    .append(" size=").append(info.sizeBytes)
+                    .append(" ---").append('\n')
+                runCatching { java.io.File(info.path).readText() }
+                    .onSuccess { append(it).append('\n') }
+                    .onFailure { append("(read failed: ${it.message})").append('\n') }
+            }
         }
     }
 
