@@ -159,48 +159,71 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     // 実行開始時にマーカーを書き、正常終了で消す。プロセスがkillされるとマーカーが残るので、
     // 次回起動時に「前回の計算は中断された（入力は自動保存済み）」と気づかせ、再実行へ導く。
     private val runMarkerFile get() = getApplication<Application>().filesDir.resolve("magi_run_marker.json")
-    /** クラッシュ耐性: 操作ログを都度 flush するセッションファイル */
+    /** クラッシュ耐性ログ（探索スレッドを塞がない・I/O は IO ディスパッチャへ） */
     private val sessionLogFile get() = getApplication<Application>().filesDir.resolve("magi_session.log")
     private val crashLogDir get() = getApplication<Application>().filesDir.resolve("crash_logs").also { it.mkdirs() }
-    private var sessionLogLinesSinceSync = 0
     private val sessionLogFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.JAPAN)
+    private val sessionLogLock = Any()
+    private val sessionLogBuf = StringBuilder(4096)
+    private var sessionLogLastFlushMs = 0L
+    private var sessionLogDirty = false
+    private var sessionLogJob: Job? = null
 
     private fun beginSessionLog(mode: String) {
-        runCatching {
-            // 前回が異常終了していたら退避
-            if (runMarkerFile.exists() && sessionLogFile.exists()) {
-                val ts = System.currentTimeMillis()
-                val dest = crashLogDir.resolve("magi_log_${ts}_interrupted.txt")
-                sessionLogFile.copyTo(dest, overwrite = true)
-                android.util.Log.w("MAGI_LOG", "preserved interrupted session log -> ${dest.name}")
+        // 軽量: 同期はヘッダ1回のみ。退避は IO。
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                synchronized(sessionLogLock) {
+                    if (runMarkerFile.exists() && sessionLogFile.exists() && sessionLogFile.length() > 0L) {
+                        val dest = crashLogDir.resolve("magi_log_${System.currentTimeMillis()}_interrupted.txt")
+                        sessionLogFile.copyTo(dest, overwrite = true)
+                    }
+                    val ver = runCatching { com.magi.app.v6.engine.AppVersion.info.compact() }.getOrDefault("?")
+                    val header =
+                        "=== MAGI session start mode=$mode ver=$ver " +
+                            "budget=${_ui.value.budgetSec}s workers=${_ui.value.workers} " +
+                            "at=${sessionLogFmt.format(java.util.Date())} ===\n"
+                    sessionLogBuf.setLength(0)
+                    sessionLogFile.writeText(header)
+                    sessionLogDirty = false
+                    sessionLogLastFlushMs = System.currentTimeMillis()
+                }
             }
-            val ver = runCatching { com.magi.app.v6.engine.AppVersion.info.compact() }.getOrDefault("?")
-            sessionLogFile.writeText(
-                "=== MAGI session start mode=$mode ver=$ver " +
-                    "budget=${_ui.value.budgetSec}s workers=${_ui.value.workers} " +
-                    "at=${sessionLogFmt.format(java.util.Date())} ===\n",
-            )
-            sessionLogLinesSinceSync = 0
-            // 外部からも拾いやすい直近スナップショット
-            getApplication<Application>().cacheDir.resolve("magi_log_latest.txt").writeText(sessionLogFile.readText())
         }
     }
 
+    /** UI スレッドではバッファに積むだけ。実書き込みはまとめて IO。 */
     private fun appendSessionLog(level: String, message: String) {
-        runCatching {
-            val line = "${sessionLogFmt.format(java.util.Date())} [$level] $message\n"
-            sessionLogFile.appendText(line)
-            sessionLogLinesSinceSync++
-            // 3行ごと / 進捗系は即時: OS クラッシュでも残りやすくする
-            val force = message.contains("進捗") || message.contains("VERIFY") ||
-                message.contains("開始") || message.contains("完了") || message.contains("クラッシュ")
-            if (force || sessionLogLinesSinceSync >= 3) {
-                // RandomAccessFile でメタデータ同期
-                java.io.FileOutputStream(sessionLogFile, true).use { fos ->
-                    fos.fd.sync()
-                }
-                sessionLogLinesSinceSync = 0
-                runCatching {
+        val line = "${sessionLogFmt.format(java.util.Date())} [$level] $message\n"
+        val now = System.currentTimeMillis()
+        var shouldFlush = false
+        synchronized(sessionLogLock) {
+            sessionLogBuf.append(line)
+            sessionLogDirty = true
+            // 進捗スパムでも 2 秒に 1 回、または 8KB 超で flush
+            if (sessionLogBuf.length >= 8192 || now - sessionLogLastFlushMs >= 2_000L) {
+                shouldFlush = true
+            }
+        }
+        if (shouldFlush) scheduleSessionLogFlush(forceSync = false)
+    }
+
+    private fun scheduleSessionLogFlush(forceSync: Boolean) {
+        if (sessionLogJob?.isActive == true && !forceSync) return
+        sessionLogJob = viewModelScope.launch(Dispatchers.IO) {
+            val chunk: String
+            synchronized(sessionLogLock) {
+                if (sessionLogBuf.isEmpty()) return@launch
+                chunk = sessionLogBuf.toString()
+                sessionLogBuf.setLength(0)
+                sessionLogDirty = false
+                sessionLogLastFlushMs = System.currentTimeMillis()
+            }
+            runCatching {
+                sessionLogFile.appendText(chunk)
+                // forceSync は終了・未捕捉時のみ（通常は OS バッファに任せる）
+                if (forceSync) {
+                    java.io.RandomAccessFile(sessionLogFile, "rw").use { it.fd.sync() }
                     getApplication<Application>().cacheDir.resolve("magi_log_latest.txt")
                         .writeText(sessionLogFile.readText())
                 }
@@ -210,17 +233,27 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun finalizeSessionLog(reason: String) {
         runCatching {
-            sessionLogFile.appendText(
-                "=== MAGI session end reason=$reason at=${sessionLogFmt.format(java.util.Date())} ===\n",
-            )
+            synchronized(sessionLogLock) {
+                sessionLogBuf.append(
+                    "=== MAGI session end reason=$reason at=${sessionLogFmt.format(java.util.Date())} ===\n",
+                )
+            }
+            // 終了時だけ同期 flush + スナップショット
+            val chunk: String
+            synchronized(sessionLogLock) {
+                chunk = sessionLogBuf.toString()
+                sessionLogBuf.setLength(0)
+                sessionLogDirty = false
+            }
+            sessionLogFile.appendText(chunk)
+            java.io.RandomAccessFile(sessionLogFile, "rw").use { it.fd.sync() }
             val ts = System.currentTimeMillis()
             val dest = crashLogDir.resolve("magi_log_${ts}.txt")
             sessionLogFile.copyTo(dest, overwrite = true)
             getApplication<Application>().cacheDir.resolve("magi_log_latest.txt")
                 .writeText(sessionLogFile.readText())
-            // 古い退避は 20 件まで
             crashLogDir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(20)?.forEach { it.delete() }
-            android.util.Log.i("MAGI_LOG", "session log saved ${dest.absolutePath}")
+            android.util.Log.i("MAGI_LOG", "session log saved ${dest.name}")
         }
     }
 
@@ -242,6 +275,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             if (runMarkerFile.exists()) runMarkerFile.delete()
         }
     }
+
     fun dismissInterrupted() {
         _ui.update { it.copy(interruptedRun = false, interruptedInfo = null) }
         OptimizationWorker.clearFiles(getApplication<Application>())   // [C1] 破棄で途中状態ファイルを削除
@@ -259,17 +293,8 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         opLog.addFirst(OpLogEntry(System.currentTimeMillis(), level, message))
         while (opLog.size > 1000) opLog.removeLast()
         _ui.update { it.copy(opLog = opLog.map { "${opLogFmt.format(java.util.Date(it.timeMs))} [${it.level}] ${it.message}" }) }
-        // クラッシュ時も残す（メモリのみだとプロセス死で消滅）
+        // ファイルはバッファ＋間引き（探索スレッドを止めない）
         appendSessionLog(level, message)
-        android.util.Log.println(
-            when (level) {
-                "E" -> android.util.Log.ERROR
-                "W" -> android.util.Log.WARN
-                else -> android.util.Log.INFO
-            },
-            "MAGI_OP",
-            message,
-        )
     }
 
     // 操作再現用デコード（現stateを参照。staff/shift一覧は操作中に不変）。
