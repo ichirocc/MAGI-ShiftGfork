@@ -85,6 +85,16 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(UiState())
 
     init {
+        // 未捕捉例外時もセッションログを確定
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching {
+                appendSessionLog("E", "UNCAUGHT ${e.javaClass.simpleName}: ${e.message}")
+                finalizeSessionLog("uncaught")
+            }
+            prev?.uncaughtException(t, e)
+        }
+
         RebuildOptimizeEntry.applyBuildConfigDefault()
         RebuildOptimizeEntry.enabled = true
         val toggles = OptimizeToggleStore.load(getApplication())
@@ -149,8 +159,74 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     // 実行開始時にマーカーを書き、正常終了で消す。プロセスがkillされるとマーカーが残るので、
     // 次回起動時に「前回の計算は中断された（入力は自動保存済み）」と気づかせ、再実行へ導く。
     private val runMarkerFile get() = getApplication<Application>().filesDir.resolve("magi_run_marker.json")
+    /** クラッシュ耐性: 操作ログを都度 flush するセッションファイル */
+    private val sessionLogFile get() = getApplication<Application>().filesDir.resolve("magi_session.log")
+    private val crashLogDir get() = getApplication<Application>().filesDir.resolve("crash_logs").also { it.mkdirs() }
+    private var sessionLogLinesSinceSync = 0
+    private val sessionLogFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.JAPAN)
+
+    private fun beginSessionLog(mode: String) {
+        runCatching {
+            // 前回が異常終了していたら退避
+            if (runMarkerFile.exists() && sessionLogFile.exists()) {
+                val ts = System.currentTimeMillis()
+                val dest = crashLogDir.resolve("magi_log_${ts}_interrupted.txt")
+                sessionLogFile.copyTo(dest, overwrite = true)
+                android.util.Log.w("MAGI_LOG", "preserved interrupted session log -> ${dest.name}")
+            }
+            val ver = runCatching { com.magi.app.v6.engine.AppVersion.info.compact() }.getOrDefault("?")
+            sessionLogFile.writeText(
+                "=== MAGI session start mode=$mode ver=$ver " +
+                    "budget=${_ui.value.budgetSec}s workers=${_ui.value.workers} " +
+                    "at=${sessionLogFmt.format(java.util.Date())} ===\n",
+            )
+            sessionLogLinesSinceSync = 0
+            // 外部からも拾いやすい直近スナップショット
+            getApplication<Application>().cacheDir.resolve("magi_log_latest.txt").writeText(sessionLogFile.readText())
+        }
+    }
+
+    private fun appendSessionLog(level: String, message: String) {
+        runCatching {
+            val line = "${sessionLogFmt.format(java.util.Date())} [$level] $message\n"
+            sessionLogFile.appendText(line)
+            sessionLogLinesSinceSync++
+            // 3行ごと / 進捗系は即時: OS クラッシュでも残りやすくする
+            val force = message.contains("進捗") || message.contains("VERIFY") ||
+                message.contains("開始") || message.contains("完了") || message.contains("クラッシュ")
+            if (force || sessionLogLinesSinceSync >= 3) {
+                // RandomAccessFile でメタデータ同期
+                java.io.FileOutputStream(sessionLogFile, true).use { fos ->
+                    fos.fd.sync()
+                }
+                sessionLogLinesSinceSync = 0
+                runCatching {
+                    getApplication<Application>().cacheDir.resolve("magi_log_latest.txt")
+                        .writeText(sessionLogFile.readText())
+                }
+            }
+        }
+    }
+
+    private fun finalizeSessionLog(reason: String) {
+        runCatching {
+            sessionLogFile.appendText(
+                "=== MAGI session end reason=$reason at=${sessionLogFmt.format(java.util.Date())} ===\n",
+            )
+            val ts = System.currentTimeMillis()
+            val dest = crashLogDir.resolve("magi_log_${ts}.txt")
+            sessionLogFile.copyTo(dest, overwrite = true)
+            getApplication<Application>().cacheDir.resolve("magi_log_latest.txt")
+                .writeText(sessionLogFile.readText())
+            // 古い退避は 20 件まで
+            crashLogDir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(20)?.forEach { it.delete() }
+            android.util.Log.i("MAGI_LOG", "session log saved ${dest.absolutePath}")
+        }
+    }
+
     private fun writeRunMarker(mode: String) {
         runCatching {
+            beginSessionLog(mode)
             val o = org.json.JSONObject()
             o.put("startedAt", System.currentTimeMillis())
             o.put("mode", mode) // "fg" | "bg"
@@ -160,7 +236,12 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             runMarkerFile.writeText(o.toString())
         }
     }
-    private fun clearRunMarker() { runCatching { if (runMarkerFile.exists()) runMarkerFile.delete() } }
+    private fun clearRunMarker() {
+        runCatching {
+            finalizeSessionLog("normal_clear")
+            if (runMarkerFile.exists()) runMarkerFile.delete()
+        }
+    }
     fun dismissInterrupted() {
         _ui.update { it.copy(interruptedRun = false, interruptedInfo = null) }
         OptimizationWorker.clearFiles(getApplication<Application>())   // [C1] 破棄で途中状態ファイルを削除
@@ -178,6 +259,17 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         opLog.addFirst(OpLogEntry(System.currentTimeMillis(), level, message))
         while (opLog.size > 1000) opLog.removeLast()
         _ui.update { it.copy(opLog = opLog.map { "${opLogFmt.format(java.util.Date(it.timeMs))} [${it.level}] ${it.message}" }) }
+        // クラッシュ時も残す（メモリのみだとプロセス死で消滅）
+        appendSessionLog(level, message)
+        android.util.Log.println(
+            when (level) {
+                "E" -> android.util.Log.ERROR
+                "W" -> android.util.Log.WARN
+                else -> android.util.Log.INFO
+            },
+            "MAGI_OP",
+            message,
+        )
     }
 
     // 操作再現用デコード（現stateを参照。staff/shift一覧は操作中に不変）。
