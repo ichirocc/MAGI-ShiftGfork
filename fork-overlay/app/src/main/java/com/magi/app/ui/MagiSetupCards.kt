@@ -552,15 +552,28 @@ internal fun AdvancedSettingsSection(
 
 
 @Composable
-internal fun LogsCard(ui: UiState, onExportLog: () -> Unit, onExportJson: () -> Unit) {
+internal fun LogsCard(ui: UiState, vm: MagiViewModel, onExportLog: () -> Unit, onExportJson: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val hasAny = ui.opLog.isNotEmpty() || ui.logs.isNotEmpty()
+    var savedCount by remember { mutableStateOf(0) }
+    LaunchedEffect(ui.running, ui.opLog.size) {
+        savedCount = runCatching { vm.listSavedSessionLogs().size }.getOrDefault(0)
+    }
+    val hasAny = ui.opLog.isNotEmpty() || ui.logs.isNotEmpty() || savedCount > 0
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("ログ", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = onExportLog, enabled = hasAny, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("テキスト出力") }
                 OutlinedButton(onClick = onExportJson, enabled = hasAny, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("JSON出力") }
+            }
+            OutlinedButton(
+                onClick = {
+                    vm.loadLatestSavedLog()
+                    savedCount = runCatching { vm.listSavedSessionLogs().size }.getOrDefault(0)
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(if (savedCount > 0) "保存ログを表示（${savedCount}件）" else "保存ログを表示")
             }
             // 操作ログ（監査・新しい順）
             Text("操作ログ（新しい順 ${ui.opLog.size}件）", style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant)
