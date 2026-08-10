@@ -20,6 +20,7 @@ object OptimizeToggleStore {
     const val KEY_BLOCK_SWAP_C3N = "blockSwapC3nFilter"
     const val KEY_NATIVE_ACCEL = "nativeAccel"
     const val KEY_NATIVE_PARITY = "nativeParity"
+    const val KEY_SESSION_LOG = "sessionLogEnabled"
 
     data class Snapshot(
         val wideC3nBreak: Boolean = false,
@@ -28,6 +29,7 @@ object OptimizeToggleStore {
         val blockSwapC3nFilter: Boolean = false,
         val nativeAccel: Boolean = true,
         val nativeParity: Boolean = true,
+        val sessionLogEnabled: Boolean = true,
     )
 
     fun load(ctx: Context): Snapshot {
@@ -39,6 +41,7 @@ object OptimizeToggleStore {
             blockSwapC3nFilter = p.getBoolean(KEY_BLOCK_SWAP_C3N, false),
             nativeAccel = p.getBoolean(KEY_NATIVE_ACCEL, true),
             nativeParity = p.getBoolean(KEY_NATIVE_PARITY, true),
+            sessionLogEnabled = p.getBoolean(KEY_SESSION_LOG, true),
         )
     }
 
@@ -51,6 +54,7 @@ object OptimizeToggleStore {
             .putBoolean(KEY_BLOCK_SWAP_C3N, snap.blockSwapC3nFilter)
             .putBoolean(KEY_NATIVE_ACCEL, snap.nativeAccel)
             .putBoolean(KEY_NATIVE_PARITY, snap.nativeParity)
+            .putBoolean(KEY_SESSION_LOG, snap.sessionLogEnabled)
             .apply()
     }
 
