@@ -2786,6 +2786,93 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     fun exportConstraintsCsv(): String? = state?.let { com.magi.app.v6.ConstraintsCsvIO.build(it) }
 
     /** Operator log as a plain-text file (mirrors the Web "ログ出力"). */
+
+    // ===== 保存セッションログのアプリ内読込・一覧 =====
+
+    data class SavedLogInfo(val name: String, val path: String, val sizeBytes: Long, val modifiedMs: Long)
+
+    /** filesDir 上のセッション／クラッシュログ一覧（新しい順）。 */
+    fun listSavedSessionLogs(): List<SavedLogInfo> {
+        val out = ArrayList<SavedLogInfo>()
+        runCatching {
+            val session = sessionLogFile
+            if (session.exists() && session.length() > 0L) {
+                out.add(SavedLogInfo(session.name, session.absolutePath, session.length(), session.lastModified()))
+            }
+            val latest = getApplication<Application>().cacheDir.resolve("magi_log_latest.txt")
+            if (latest.exists() && latest.length() > 0L) {
+                out.add(SavedLogInfo(latest.name, latest.absolutePath, latest.length(), latest.lastModified()))
+            }
+            crashLogDir.listFiles()?.filter { it.isFile && it.name.startsWith("magi_log_") }?.forEach { f ->
+                out.add(SavedLogInfo(f.name, f.absolutePath, f.length(), f.lastModified()))
+            }
+        }
+        return out.sortedByDescending { it.modifiedMs }
+    }
+
+    /** バッファを落としてからファイル全文を返す（null=無し）。 */
+    fun readSavedSessionLog(name: String? = null): String? {
+        scheduleSessionLogFlush(forceSync = false)
+        // 短い待ちではなく、同期でバッファを書く
+        runCatching {
+            val chunk: String
+            synchronized(sessionLogLock) {
+                chunk = sessionLogBuf.toString()
+                if (chunk.isNotEmpty()) {
+                    sessionLogBuf.setLength(0)
+                    sessionLogDirty = false
+                }
+            }
+            if (chunk.isNotEmpty()) sessionLogFile.appendText(chunk)
+        }
+        val files = listSavedSessionLogs()
+        if (files.isEmpty()) return null
+        val target = when {
+            name.isNullOrBlank() -> files.first()
+            else -> files.firstOrNull { it.name == name } ?: return null
+        }
+        return runCatching { java.io.File(target.path).readText() }.getOrNull()
+    }
+
+    /**
+     * 保存ログを操作ログ欄に読み込む（画面の「操作ログ」で閲覧可能）。
+     * @return 読み込んだ行数。0 なら無し。
+     */
+    fun loadSavedSessionLogIntoUi(name: String? = null): Int {
+        val body = readSavedSessionLog(name) ?: run {
+            logOp("W", "保存ログなし（まだセッションが無い、または空）")
+            return 0
+        }
+        val lines = body.lineSequence().filter { it.isNotBlank() }.toList()
+        // 新しい順表示に合わせ、ファイル末尾（新しい）を先に
+        opLog.clear()
+        val now = System.currentTimeMillis()
+        lines.asReversed().forEachIndexed { idx, line ->
+            // "yyyy-MM-dd HH:mm:ss.SSS [L] msg" をなるべく分解
+            val level = when {
+                "] [E]" in line || line.contains("[E]") -> "E"
+                "] [W]" in line || line.contains("[W]") -> "W"
+                else -> "I"
+            }
+            opLog.addLast(OpLogEntry(now - idx.toLong(), level, line))
+        }
+        while (opLog.size > 1000) opLog.removeLast()
+        _ui.update {
+            it.copy(
+                opLog = opLog.map { e ->
+                    "${opLogFmt.format(java.util.Date(e.timeMs))} [${e.level}] ${e.message}"
+                },
+                message = "保存ログを表示: ${name ?: lines.firstOrNull()?.take(40) ?: "latest"}（${lines.size}行）",
+            )
+        }
+        android.util.Log.i("MAGI_LOG", "loaded saved log lines=${lines.size} name=$name")
+        return lines.size
+    }
+
+    /** 最新の保存ログを UI に読み込む（ボタン用）。 */
+    fun loadLatestSavedLog(): Int = loadSavedSessionLogIntoUi(null)
+
+
     fun exportLogs(): String? {
         val ops = _ui.value.opLog
         // 出力は全文（非圧縮）。画面表示は圧縮版だが、監査用にはロスレスの rawDiagLogs を使う。
@@ -2815,6 +2902,17 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         o.put("satisfactionMeaning", "0-100の進捗スコア（必須・合計違反の減少度）。希望充足率ではありません")
         o.put("opLog", org.json.JSONArray().apply { _ui.value.opLog.forEach { put(it) } })
         o.put("diagLog", org.json.JSONArray().apply { rawDiagLogs.ifEmpty { _ui.value.logs }.forEach { put(it) } })
+        o.put("savedSessionLogs", org.json.JSONArray().apply {
+            for (info in listSavedSessionLogs()) {
+                put(org.json.JSONObject().apply {
+                    put("name", info.name)
+                    put("path", info.path)
+                    put("sizeBytes", info.sizeBytes)
+                    put("modifiedMs", info.modifiedMs)
+                    put("content", runCatching { java.io.File(info.path).readText() }.getOrDefault(""))
+                })
+            }
+        })
         o.put("breakdown", org.json.JSONObject().apply { _ui.value.breakdown.forEach { (k, v) -> put(k, v) } })
         return o.toString(2)
     }
