@@ -562,6 +562,24 @@ internal fun LogsCard(ui: UiState, vm: MagiViewModel, onExportLog: () -> Unit, o
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("ログ", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("ログ出力", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (ui.sessionLogEnabled) "操作ログとファイル保存 ON" else "探索中のログを抑止（性能優先）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = ui.sessionLogEnabled,
+                    onCheckedChange = { vm.setSessionLogEnabled(it) },
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = onExportLog, enabled = hasAny, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("テキスト出力") }
                 OutlinedButton(onClick = onExportJson, enabled = hasAny, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("JSON出力") }
