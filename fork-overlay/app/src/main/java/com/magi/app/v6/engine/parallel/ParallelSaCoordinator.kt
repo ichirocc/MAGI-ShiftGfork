@@ -58,6 +58,10 @@ class ParallelSaCoordinator(
         onProgress: ((iters: Long, best: ViolationReport) -> Unit)? = null,
         @Suppress("UNUSED_PARAMETER")
         allowNative: Boolean = false,
+        /** best.hard がこの時間改善しなければ早期切り上げ（0で無効） */
+        noImproveMs: Long = DEFAULT_NO_IMPROVE_MS,
+        /** これ以下の hard は「改善不能 HARD のみ」とみなし停滞切上げを早める */
+        provenHardFloor: Int = 0,
     ): ParallelSaResult {
         val n = safeWorkerCount(workers)
         val deadline = System.currentTimeMillis() + budgetMs.coerceAtLeast(1L)
@@ -67,15 +71,18 @@ class ParallelSaCoordinator(
         val elite = AtomicReference(
             Elite(SearchSessionFull.deepCopy(seedBoard), evaluate(seedBoard)),
         )
+        val lastImproveMs = AtomicLong(System.currentTimeMillis())
+        val lastHard = java.util.concurrent.atomic.AtomicInteger(elite.get().report.hard)
 
         android.util.Log.i(
             "MAGI",
-            "STAGE parallel-start workers=$n budgetMs=$budgetMs mode=kotlin-only-noCopyEval",
+            "STAGE parallel-start workers=$n budgetMs=$budgetMs noImproveMs=$noImproveMs " +
+                "provenHardFloor=$provenHardFloor mode=kotlin-only-noCopyEval",
         )
         runCatching { onProgress?.invoke(0L, elite.get().report) }
 
         if (n == 1) {
-            val (iters, rep) = runWorker(0, baseSeed, seedBoard, deadline, stop, shouldStop, elite, sharedIters)
+            val (iters, rep) = runWorker(0, baseSeed, seedBoard, deadline, stop, shouldStop, elite, sharedIters, lastImproveMs, lastHard)
             runCatching { onProgress?.invoke(iters, elite.get().report) }
             val e = elite.get()
             return ParallelSaResult(
@@ -89,12 +96,37 @@ class ParallelSaCoordinator(
             val futures = (0 until n).map { w ->
                 val seed = baseSeed xor (w.toLong() * -0x61c8864680b583ebL)
                 pool.submit(Callable {
-                    runWorker(w, seed, seedBoard, deadline, stop, shouldStop, elite, sharedIters)
+                    runWorker(w, seed, seedBoard, deadline, stop, shouldStop, elite, sharedIters, lastImproveMs, lastHard)
                 })
             }
+            var stopReasonLocal = StopReason.DEADLINE
             while (futures.any { !it.isDone }) {
                 if (shouldStop()) {
                     stop.set(true)
+                    stopReasonLocal = StopReason.CANCELLED
+                    break
+                }
+                val er = elite.get().report
+                val improvable = (er.hard - provenHardFloor).coerceAtLeast(0)
+                // 改善可能な HARD が尽きた、または HARD 停滞
+                val stalled = noImproveMs > 0L &&
+                    System.currentTimeMillis() - lastImproveMs.get() >= noImproveMs
+                if (improvable == 0 && er.hard > 0) {
+                    android.util.Log.i(
+                        "MAGI",
+                        "STAGE parallel-cutover reason=all-hard-unimprovable hard=${er.hard} floor=$provenHardFloor",
+                    )
+                    stop.set(true)
+                    stopReasonLocal = StopReason.PROVEN_PIN_WALL
+                    break
+                }
+                if (stalled && er.hard > 0) {
+                    android.util.Log.i(
+                        "MAGI",
+                        "STAGE parallel-cutover reason=hard-stagnation noImproveMs=$noImproveMs hard=${er.hard}",
+                    )
+                    stop.set(true)
+                    stopReasonLocal = StopReason.FIXED_POINT
                     break
                 }
                 runCatching { onProgress?.invoke(sharedIters.get(), elite.get().report) }
@@ -102,6 +134,7 @@ class ParallelSaCoordinator(
                     Thread.sleep(PROGRESS_MS)
                 } catch (_: InterruptedException) {
                     stop.set(true)
+                    stopReasonLocal = StopReason.CANCELLED
                     Thread.currentThread().interrupt()
                     break
                 }
@@ -132,7 +165,11 @@ class ParallelSaCoordinator(
                 report = e.report,
                 workerBestReports = reports,
                 totalIters = finalIters,
-                stopReason = if (shouldStop()) StopReason.CANCELLED else StopReason.DEADLINE,
+                stopReason = when {
+                    shouldStop() -> StopReason.CANCELLED
+                    stopReasonLocal != StopReason.DEADLINE -> stopReasonLocal
+                    else -> StopReason.DEADLINE
+                },
             )
         } finally {
             stop.set(true)
@@ -150,6 +187,8 @@ class ParallelSaCoordinator(
         shouldStop: () -> Boolean,
         elite: AtomicReference<Elite>,
         sharedIters: AtomicLong,
+        lastImproveMs: AtomicLong,
+        lastHard: java.util.concurrent.atomic.AtomicInteger,
     ): Pair<Long, ViolationReport> {
         return try {
             val rng = Random(seed)
@@ -175,7 +214,7 @@ class ParallelSaCoordinator(
                 )
                 totalIters += iters
                 sharedIters.addAndGet(iters)
-                publishElite(elite, session.best, session.bestReport)
+                publishElite(elite, session.best, session.bestReport, lastImproveMs, lastHard)
             }
             totalIters to session.bestReport
         } catch (t: Throwable) {
@@ -188,12 +227,20 @@ class ParallelSaCoordinator(
         elite: AtomicReference<Elite>,
         schedule: Array<IntArray>,
         report: ViolationReport,
+        lastImproveMs: AtomicLong,
+        lastHard: java.util.concurrent.atomic.AtomicInteger,
     ) {
         while (true) {
             val cur = elite.get()
             if (!better(report, cur.report)) return
             val next = Elite(SearchSessionFull.deepCopy(schedule), report)
-            if (elite.compareAndSet(cur, next)) return
+            if (elite.compareAndSet(cur, next)) {
+                if (report.hard < lastHard.get()) {
+                    lastHard.set(report.hard)
+                    lastImproveMs.set(System.currentTimeMillis())
+                }
+                return
+            }
         }
     }
 
@@ -202,6 +249,8 @@ class ParallelSaCoordinator(
         private const val SLICE_MS = 3_000L
         private const val PROGRESS_MS = 5_000L
         private const val JOIN_SLACK_MS = 25_000L
+        /** HARD 非更新の早期切り上げ（並列 G1） */
+        const val DEFAULT_NO_IMPROVE_MS = 10_000L
 
         fun safeWorkerCount(requested: Int): Int {
             val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
