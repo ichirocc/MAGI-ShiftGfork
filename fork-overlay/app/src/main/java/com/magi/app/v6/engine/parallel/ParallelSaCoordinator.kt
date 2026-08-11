@@ -107,28 +107,32 @@ class ParallelSaCoordinator(
                     break
                 }
                 val er = elite.get().report
-                val improvable = (er.hard - provenHardFloor).coerceAtLeast(0)
-                // 改善可能な HARD が尽きた、または HARD 停滞
-                val stalled = noImproveMs > 0L &&
-                    System.currentTimeMillis() - lastImproveMs.get() >= noImproveMs
-                if (improvable == 0 && er.hard > 0) {
+                val covU = er.breakdown["covU"] ?: er.breakdown["shiftU"] ?: 0
+                val sinceImprove = System.currentTimeMillis() - lastImproveMs.get()
+                // 数値 floor は参考。主に hard 停滞 + 構造残差で切上げ
+                val stalled = noImproveMs > 0L && sinceImprove >= noImproveMs
+                // 構造駆動: hard が短時間止まっていて covU が残る → 待たずに G2 へ
+                val structureCut = er.hard > 0 && covU > 0 && sinceImprove >= STRUCTURE_CUTOVER_MS
+                if (structureCut) {
                     android.util.Log.i(
                         "MAGI",
-                        "STAGE parallel-cutover reason=all-hard-unimprovable hard=${er.hard} floor=$provenHardFloor",
-                    )
-                    stop.set(true)
-                    stopReasonLocal = StopReason.PROVEN_PIN_WALL
-                    break
-                }
-                if (stalled && er.hard > 0) {
-                    android.util.Log.i(
-                        "MAGI",
-                        "STAGE parallel-cutover reason=hard-stagnation noImproveMs=$noImproveMs hard=${er.hard}",
+                        "STAGE parallel-cutover reason=structure-covU hard=${er.hard} covU=$covU " +
+                            "stalledMs=$sinceImprove",
                     )
                     stop.set(true)
                     stopReasonLocal = StopReason.FIXED_POINT
                     break
                 }
+                if (stalled && er.hard > 0) {
+                    android.util.Log.i(
+                        "MAGI",
+                        "STAGE parallel-cutover reason=hard-stagnation noImproveMs=$noImproveMs hard=${er.hard} covU=$covU",
+                    )
+                    stop.set(true)
+                    stopReasonLocal = StopReason.FIXED_POINT
+                    break
+                }
+                // proven floor のみでは切らない（excludeFamilies 主判定は Scheduler/Pipeline）
                 runCatching { onProgress?.invoke(sharedIters.get(), elite.get().report) }
                 try {
                     Thread.sleep(PROGRESS_MS)
@@ -216,7 +220,13 @@ class ParallelSaCoordinator(
                 sharedIters.addAndGet(iters)
                 publishElite(elite, session.best, session.bestReport, lastImproveMs, lastHard)
             }
-            totalIters to session.bestReport
+            val br = session.bestReport
+            android.util.Log.i(
+                "MAGI",
+                "STAGE parallel-worker-$workerId done iters=$totalIters hard=${br.hard} soft=${br.soft} " +
+                    "total=${br.total} covU=${br.breakdown["covU"] ?: br.breakdown["shiftU"] ?: 0}",
+            )
+            totalIters to br
         } catch (t: Throwable) {
             android.util.Log.e("MAGI", "ParallelSa worker-$workerId ${t.javaClass.simpleName}: ${t.message}", t)
             0L to elite.get().report
@@ -251,6 +261,8 @@ class ParallelSaCoordinator(
         private const val JOIN_SLACK_MS = 25_000L
         /** HARD 非更新の早期切り上げ（並列 G1） */
         const val DEFAULT_NO_IMPROVE_MS = 12_000L
+        /** hard停滞かつ covU 残存時の早期切上げ */
+        const val STRUCTURE_CUTOVER_MS = 3_000L
 
         fun safeWorkerCount(requested: Int): Int {
             val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
