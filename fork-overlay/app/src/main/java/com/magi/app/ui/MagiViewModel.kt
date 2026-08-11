@@ -1212,13 +1212,17 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                                     val bits = listOf("covU", "c3n", "covO", "weekly", "c3", "apt").joinToString(" ") { k ->
                                         "$k=${bd[k] ?: 0}"
                                     }
-                                    val milestone = sp.phase in setOf(
-                                        "start", "g1", "g1-parallel", "rsi", "alns", "vns",
-                                        "dir-polish", "g3", "g4", "residual", "done",
-                                        "hard_residual", "unimprovable",
-                                    ) || sp.phase.startsWith("unimprovable") || sp.phase.startsWith("g1")
-                                    // マイルストーンは間引きせず、通常進捗は3秒に1回
-                                    if (milestone || now - lastPhaseLogMs >= 3_000L) {
+                                    // g1-parallel を毎コールでログすると OOM 誘発（実機: 1.5s×数十行）
+                                    val isG1Tick = sp.phase == "g1" || sp.phase == "g1-parallel" || sp.phase == "g1-native-refine"
+                                    val milestone = !isG1Tick && (
+                                        sp.phase in setOf(
+                                            "start", "rsi", "alns", "vns",
+                                            "dir-polish", "g3", "g4", "residual", "done",
+                                            "hard_residual", "unimprovable",
+                                        ) || sp.phase.startsWith("unimprovable")
+                                    )
+                                    val throttleMs = if (isG1Tick) 5_000L else 3_000L
+                                    if (milestone || now - lastPhaseLogMs >= throttleMs) {
                                         lastPhaseLogMs = now
                                         val msg = when {
                                             sp.phase.startsWith("unimprovable") ->
