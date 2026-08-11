@@ -87,8 +87,18 @@ class FocusAwareFixProvider(
             return null
         }
         android.util.Log.d("MAGI_FIX", "covU deficits=${defs.size}")
-        defs.shuffle(rng)
-        defs.sortByDescending { it[2] }
+        // CoverageFocusQueue（診断の未到達枠）を先頭に
+        val queued = CoverageFocusQueue.snapshot()
+        if (queued.isNotEmpty()) {
+            val qset = queued.map { it.day to it.shift }.toSet()
+            defs.sortWith(
+                compareByDescending<IntArray> { if ((it[0] to it[1]) in qset) 1 else 0 }
+                    .thenByDescending { it[2] },
+            )
+        } else {
+            defs.shuffle(rng)
+            defs.sortByDescending { it[2] }
+        }
         for (def in defs) {
             val d = def[0]
             val k = def[1]
