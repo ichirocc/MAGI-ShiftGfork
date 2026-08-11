@@ -186,15 +186,33 @@ class SchedulerService(
                 // RSI（フォーク元分解）: 最大違反族フォーカス
         // HARD が残っている間は RSI に厚く配分（後段空振り対策）
         val hardAfterG1 = session.bestReport.hard
-        val improvableHard = (hardAfterG1 - provenHardFloor).coerceAtLeast(0)
+        // 主判定: 残 HARD 族がすべて infeasible(exclude) か（数値 floor は参考のみ）
+        val residualHardFamilies = UnimprovableConstraints.HARD_FAMILY_KEYS.filter { k ->
+            val key = when (k) {
+                "shiftU" -> "covU"
+                "wish" -> "pref"
+                else -> k
+            }
+            (session.bestReport.breakdown[key] ?: session.bestReport.breakdown[k] ?: 0) > 0
+        }.map {
+            when (it) {
+                "shiftU" -> "covU"
+                "wish" -> "pref"
+                else -> it
+            }
+        }.toSet()
+        val allHardExcluded = hardAfterG1 > 0 &&
+            residualHardFamilies.isNotEmpty() &&
+            residualHardFamilies.all { it in infeasible }
         android.util.Log.i(
             "MAGI",
-            "STAGE hard-floor afterG1 hard=$hardAfterG1 provenFloor=$provenHardFloor improvable=$improvableHard",
+            "STAGE hard-floor afterG1 hard=$hardAfterG1 provenFloor=$provenHardFloor " +
+                "residualFamilies=$residualHardFamilies exclude=$infeasible allExcluded=$allHardExcluded",
         )
-        // 改善可能な HARD が無いなら RSI を短くし soft へ（不能 HARD を掘らない）
+        // 残 HARD がすべて exclude のときだけ RSI 短縮（不能を掘らない）
         val rsiShare = when {
             hardAfterG1 <= 0 -> 0.50
-            improvableHard <= 0 -> 0.25
+            allHardExcluded -> 0.25
             else -> 0.72
         }
         val rsiMs = (g2Ms * rsiShare).toLong().coerceAtLeast(1L)
@@ -209,6 +227,7 @@ class SchedulerService(
             "MAGI",
             "STAGE rsi-enter budgetMs=$rsiMs hard=${session.bestReport.hard} shiftDemand=$hasSd native=${nativeProbe != null} infeasible=$infeasible",
         )
+        CoverageFocusQueue.rebuild(problem, session.best)
         val rsiIters = SimpleRsi(problem, session, fixProvider).run(
             SimpleRsi.Params(
                 budgetMs = rsiMs,
