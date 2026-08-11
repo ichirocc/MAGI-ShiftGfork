@@ -48,6 +48,7 @@ class MainOptimizeBridge(
         seed: Long = 0L,
         shouldStop: () -> Boolean = { false },
         infeasibleFamilies: Set<String> = emptySet(),
+        provenHardFloor: Int = 0,
         workers: Int = this.workers,
         progressListener: SearchProgressListener? = this.progressListener,
     ): RunArtifacts {
@@ -72,6 +73,7 @@ class MainOptimizeBridge(
                 seed = seed,
                 shouldStop = shouldStop,
                 infeasibleFamilies = infeasibleFamilies,
+                provenHardFloor = provenHardFloor,
                 deltaHook = deltaHook,
                 workers = workers,
                 nativeProbe = nativeProbe,
