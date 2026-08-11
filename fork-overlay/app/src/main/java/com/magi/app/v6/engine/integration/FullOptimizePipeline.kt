@@ -185,6 +185,7 @@ object FullOptimizePipeline {
                 seed = baseSeed,
                 shouldStop = shouldStop,
                 infeasibleFamilies = unimprovable.excludeFamilies,
+                provenHardFloor = unimprovable.provenHardUnits,
             )
             if (parallel && fullEvalHandle != 0L && com.magi.app.v6.NativeGate.usable) {
                 com.magi.app.v6.NativeFullEval.attach(fullEvalHandle)
@@ -217,11 +218,29 @@ object FullOptimizePipeline {
                 } else null
             // 本走後に再判定（動いた不足と、なお塞がっている HARD を分離）
             unimprovable = UnimprovableConstraints.analyze(problem, art.schedule, art.report)
+            val improvHard = unimprovable.improvableHard(art.report.hard)
             android.util.Log.i(
                 "MAGI",
-                "STAGE unimprovable-after-main exclude=${unimprovable.excludeFamilies} provenHard=${unimprovable.provenHardUnits} hard=${art.report.hard}",
+                "STAGE unimprovable-after-main exclude=${unimprovable.excludeFamilies} " +
+                    "provenHard=${unimprovable.provenHardUnits} hard=${art.report.hard} improvable=$improvHard",
             )
-            if (!shouldStop() && art.report.hard > 0 && options.hardResidualMs > 0L) {
+            // 改善可能な HARD が残っていない → 残差で掘っても無意味。予算を使わない
+            if (unimprovable.allHardUnimprovable(art.report.hard)) {
+                android.util.Log.i(
+                    "MAGI",
+                    "STAGE hard-residual-skip reason=all-hard-unimprovable hard=${art.report.hard} " +
+                        "floor=${unimprovable.provenHardUnits}",
+                )
+                onProgress?.invoke(
+                    SearchProgress(
+                        "unimprovable",
+                        art.report,
+                        0L,
+                        System.currentTimeMillis() - wall0,
+                        art.schedule,
+                    ),
+                )
+            } else if (!shouldStop() && art.report.hard > 0 && options.hardResidualMs > 0L) {
                 onProgress?.invoke(
                     SearchProgress("hard_residual", art.report, 0L, 0L, art.schedule),
                 )
@@ -247,6 +266,7 @@ object FullOptimizePipeline {
                     seed = baseSeed xor 0x11A11D11L,
                     shouldStop = shouldStop,
                     infeasibleFamilies = unimprovable.excludeFamilies,
+                    provenHardFloor = unimprovable.provenHardUnits,
                 )
                 OptimizeBenchLog.phase(
                     engine = OptimizeBenchLog.ENGINE_REBUILD,
