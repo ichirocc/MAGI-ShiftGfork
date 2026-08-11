@@ -263,7 +263,7 @@ private fun OptimizationTuningSection(ui: UiState, vm: MagiViewModel) {
                 enabled = !ui.running && ui.workers > 1, modifier = Modifier.height(48.dp).semantics { contentDescription = "同時計算数を減らす" }) { Text("−", fontSize = 20.sp) }
             Text("${ui.workers}", style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center, modifier = Modifier.width(56.dp))
-            Button(onClick = { vm.setWorkers((ui.workers + 1).coerceAtMost(16)) },
+            Button(onClick = { vm.setWorkers((ui.workers + 1).coerceAtMost(com.magi.app.v6.engine.parallel.ParallelSaCoordinator.MAX_PARALLEL)) },
                 enabled = !ui.running && ui.workers < 16, modifier = Modifier.height(48.dp).semantics { contentDescription = "同時計算数を増やす" }) { Text("＋", fontSize = 20.sp) }
         }
         // [仮説数上限撤廃・ユーザー指示] 旧: 仮説数は5固定・超過ワーカーは仮説内並列度へ配分。
