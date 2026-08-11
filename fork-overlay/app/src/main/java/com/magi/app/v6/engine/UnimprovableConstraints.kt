@@ -40,9 +40,12 @@ object UnimprovableConstraints {
         fun improvableHard(currentHard: Int): Int =
             (currentHard - provenHardUnits).coerceAtLeast(0)
 
-        /** 残 HARD がすべて構造的に改善不能とみなせるか */
+        /**
+         * 残 HARD がすべて構造的に改善不能とみなせるか。
+         * ALL: 由来の floor が無いときは false（PARTIAL だけでは full-stop しない）。
+         */
         fun allHardUnimprovable(currentHard: Int): Boolean =
-            currentHard > 0 && improvableHard(currentHard) == 0
+            currentHard > 0 && provenHardUnits > 0 && improvableHard(currentHard) == 0
     }
 
     fun analyze(
@@ -60,16 +63,15 @@ object UnimprovableConstraints {
         findings += analyzeWeeklyFloor(problem, schedule, report)
 
         val exclude = HashSet<String>()
+        // provenHardUnits は ALL: のみ合算（PARTIAL 合算は二重計上・過大床の原因）
         var provenHard = 0
         for (f in findings) {
-            if (f.hard && f.count > 0) {
-                // 族全体が塞がっているときだけ exclude
-                if (f.reason.startsWith("ALL:")) {
-                    exclude += f.family
-                }
+            if (!f.hard || f.count <= 0) continue
+            if (f.reason.startsWith("ALL:")) {
+                exclude += f.family
                 provenHard += f.count
             }
-            // SOFT の構造床は exclude しない（部分改善の余地）が、週は床のみログ
+            // PARTIAL はログ用。floor / full-stop には入れない
         }
 
         // 部分 covU は exclude しない（動ける不足がある）
