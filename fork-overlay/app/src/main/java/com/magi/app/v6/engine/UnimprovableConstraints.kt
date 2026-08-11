@@ -35,6 +35,14 @@ object UnimprovableConstraints {
     ) {
         val hardFamilies: Set<String> get() = findings.filter { it.hard }.map { it.family }.toSet()
         val softFamilies: Set<String> get() = findings.filter { !it.hard }.map { it.family }.toSet()
+
+        /** 現在 hard のうち、まだ探索で減らせる見込みがある分（下限0） */
+        fun improvableHard(currentHard: Int): Int =
+            (currentHard - provenHardUnits).coerceAtLeast(0)
+
+        /** 残 HARD がすべて構造的に改善不能とみなせるか */
+        fun allHardUnimprovable(currentHard: Int): Boolean =
+            currentHard > 0 && improvableHard(currentHard) == 0
     }
 
     fun analyze(
@@ -46,6 +54,7 @@ object UnimprovableConstraints {
         findings += analyzeC3n(problem, schedule, report)
         findings += analyzeCovU(problem, schedule, report)
         findings += analyzeCovO(problem, schedule, report)
+        findings += analyzeWishImpossible(problem, schedule, report)
         findings += analyzeAptRanges(problem, schedule, report)
         findings += analyzeExactConflict(problem, report)
         findings += analyzeWeeklyFloor(problem, schedule, report)
@@ -140,6 +149,39 @@ object UnimprovableConstraints {
             )
         }
         return emptyList()
+    }
+
+    /**
+     * 実現不能な希望固定（担当不可シフトを希望している）→ 希望を変えない限り消えない。
+     * HARD に pref/wish が載る場合の下限。
+     */
+    private fun analyzeWishImpossible(
+        problem: Problem,
+        schedule: Array<IntArray>,
+        report: ViolationReport,
+    ): List<Finding> {
+        var impossible = 0
+        for (s in 0 until problem.S) {
+            for (d in 0 until problem.T) {
+                if (!problem.wishLocked(s, d)) continue
+                val k = schedule[s][d]
+                // 固定セルの現値が担当不可なら、希望側が壊れている（診断の実現不能希望）
+                if (k in 0 until problem.K && !problem.canDo(s, k)) {
+                    impossible++
+                    continue
+                }
+            }
+        }
+        if (impossible <= 0) return emptyList()
+        val pref = report.breakdown["pref"] ?: report.breakdown["wish"] ?: 0
+        return listOf(
+            Finding(
+                "pref",
+                true,
+                "ALL: impossibleWishCells=$impossible (担当不可の希望固定・設定変更が必要)",
+                maxOf(impossible, pref),
+            ),
+        )
     }
 
     /** シフト別不足で、担当可・非固定の補充者が誰もいない */
