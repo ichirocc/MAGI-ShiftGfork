@@ -16,17 +16,18 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * 並列 SA（g1-parallel 完成・安定版）
+ * 並列 SA（クラッシュ耐性・根本修正）
  *
- * ## なぜ並列内で native を使わないか（クラッシュの根）
- * JNI [NativeEval.createHandle] / delta を複数スレッドから同時に呼ぶと、
- * C++ 側の非スレッドセーフ初期化やグローバルとぶつかり SIGSEGV する実害があった。
+ * ## クラッシュの根（実機: g1-parallel 中に必須改善後 OS kill）
+ * 1. 評価のたび [SearchSessionFull.deepCopy] → GC 爆発・OOM/LMK
+ * 2. 全ワーカーが共有 evalLock で直列化 → 並列の意味が無いのにコピーだけ増える
+ * 3. 進捗 1.5s × UI ログでメイン/ヒープ圧迫
  *
- * ## 並列の正しい役割分担
- * - **並列フェーズ（ここ）**: Kotlin のみ。ワーカー独立 Session で探索を並列化
- * - **単一スレッドフェーズ**: マージ後にメイン Session で native 加速（Scheduler 側）
- *
- * 共有は Elite CAS と原子カウンタのみ。評価は盤面コピー＋短時間ロック。
+ * ## 方針
+ * - ワーカーは自盤面を所有。evaluate はコピーなし（評価は読み取りのみと契約）
+ * - Elite 公開時だけ deepCopy
+ * - ワーカー上限 4・進捗 5 秒
+ * - JNI は並列では絶対に使わない
  */
 data class ParallelSaResult(
     val schedule: Array<IntArray>,
@@ -48,48 +49,39 @@ class ParallelSaCoordinator(
     @Suppress("UNUSED_PARAMETER")
     private val deltaHook: DeltaEvaluateHook? = null,
 ) {
-    private val evalLock = Any()
-
-    private fun evalSnapshot(schedule: Array<IntArray>): ViolationReport {
-        val snap = SearchSessionFull.deepCopy(schedule)
-        synchronized(evalLock) {
-            return evaluate(snap)
-        }
-    }
-
     fun run(
         initial: Array<IntArray>,
-        workers: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 8),
+        workers: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, MAX_PARALLEL),
         budgetMs: Long = 120_000L,
         baseSeed: Long = 1L,
         shouldStop: () -> Boolean = { false },
         onProgress: ((iters: Long, best: ViolationReport) -> Unit)? = null,
         @Suppress("UNUSED_PARAMETER")
-        allowNative: Boolean = false, // PARALLEL_NATIVE_FORBIDDEN: JNI は単一スレッド refine のみ
+        allowNative: Boolean = false,
     ): ParallelSaResult {
-        val n = workers.coerceIn(1, MAX_PARALLEL)
+        val n = safeWorkerCount(workers)
         val deadline = System.currentTimeMillis() + budgetMs.coerceAtLeast(1L)
         val stop = AtomicBoolean(false)
         val sharedIters = AtomicLong(0L)
-        val initialCopy = SearchSessionFull.deepCopy(initial)
+        val seedBoard = SearchSessionFull.deepCopy(initial)
         val elite = AtomicReference(
-            Elite(SearchSessionFull.deepCopy(initialCopy), evalSnapshot(initialCopy)),
+            Elite(SearchSessionFull.deepCopy(seedBoard), evaluate(seedBoard)),
         )
 
         android.util.Log.i(
             "MAGI",
-            "STAGE parallel-start workers=$n budgetMs=$budgetMs mode=kotlin-only",
+            "STAGE parallel-start workers=$n budgetMs=$budgetMs mode=kotlin-only-noCopyEval",
         )
-        runCatching {
-            onProgress?.invoke(0L, elite.get().report)
-        }
+        runCatching { onProgress?.invoke(0L, elite.get().report) }
 
         if (n == 1) {
-            val (iters, rep) = runWorker(0, baseSeed, initialCopy, deadline, stop, shouldStop, elite, sharedIters)
+            val (iters, rep) = runWorker(0, baseSeed, seedBoard, deadline, stop, shouldStop, elite, sharedIters)
             runCatching { onProgress?.invoke(iters, elite.get().report) }
             val e = elite.get()
-            return ParallelSaResult(e.schedule, e.report, listOf(rep), iters,
-                if (shouldStop()) StopReason.CANCELLED else StopReason.DEADLINE)
+            return ParallelSaResult(
+                e.schedule, e.report, listOf(rep), iters,
+                if (shouldStop()) StopReason.CANCELLED else StopReason.DEADLINE,
+            )
         }
 
         val pool = Executors.newFixedThreadPool(n)
@@ -97,7 +89,7 @@ class ParallelSaCoordinator(
             val futures = (0 until n).map { w ->
                 val seed = baseSeed xor (w.toLong() * -0x61c8864680b583ebL)
                 pool.submit(Callable {
-                    runWorker(w, seed, initialCopy, deadline, stop, shouldStop, elite, sharedIters)
+                    runWorker(w, seed, seedBoard, deadline, stop, shouldStop, elite, sharedIters)
                 })
             }
             while (futures.any { !it.isDone }) {
@@ -164,7 +156,7 @@ class ParallelSaCoordinator(
             val session = SearchSessionFull(
                 problem,
                 SearchSessionFull.deepCopy(initial),
-                ::evalSnapshot,
+                evaluate,
                 better,
                 deltaHook = null,
             )
@@ -184,12 +176,6 @@ class ParallelSaCoordinator(
                 totalIters += iters
                 sharedIters.addAndGet(iters)
                 publishElite(elite, session.best, session.bestReport)
-                if (totalIters % 500L < iters.coerceAtLeast(1L)) {
-                    android.util.Log.i(
-                        "MAGI",
-                        "STAGE parallel-worker-$workerId iters=$totalIters hard=${session.bestReport.hard} total=${session.bestReport.total}",
-                    )
-                }
             }
             totalIters to session.bestReport
         } catch (t: Throwable) {
@@ -212,9 +198,21 @@ class ParallelSaCoordinator(
     }
 
     companion object {
-        const val MAX_PARALLEL = 8
-        private const val SLICE_MS = 2_500L
-        private const val PROGRESS_MS = 1_500L
+        const val MAX_PARALLEL = 4
+        private const val SLICE_MS = 3_000L
+        private const val PROGRESS_MS = 5_000L
         private const val JOIN_SLACK_MS = 25_000L
+
+        fun safeWorkerCount(requested: Int): Int {
+            val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            val freeMb = Runtime.getRuntime().freeMemory() / (1024L * 1024L)
+            val byMem = when {
+                freeMb < 32L -> 1
+                freeMb < 64L -> 2
+                freeMb < 128L -> 3
+                else -> MAX_PARALLEL
+            }
+            return requested.coerceIn(1, minOf(MAX_PARALLEL, cores, byMem))
+        }
     }
 }
