@@ -188,7 +188,15 @@ class FocusAwareFixProvider(
                     if (!problem.canDo(s1, needK)) continue
                     val writes = intArrayOf(s1, day, needK, s2, day, cur1)
                     android.util.Log.d("MAGI_FIX", "covU chain2 s1=$s1->$needK s2=$s2->$cur1 d=$day")
-                    return Move(board.version, writes, "chain_day", "g2.covU.chain2")
+                    return MoveNormalizer.normalize(
+                        board.version,
+                        writes,
+                        "chain_day",
+                        "g2.covU.chain2",
+                        problem.S,
+                        problem.T,
+                        problem.K,
+                    )
                 }
             }
         }
