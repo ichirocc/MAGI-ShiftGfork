@@ -35,6 +35,8 @@ class SchedulerService(
         rng: Random = Random(0L),
         shouldStop: () -> Boolean = { false },
         infeasible: Set<String> = emptySet(),
+        /** 探索不能と証明された HARD 下限（UnimprovableConstraints.provenHardUnits） */
+        provenHardFloor: Int = 0,
         g3Backend: G3Backend = FullyWiredG3Backend(problem, evaluate, better, rng),
         fixProvider: FocusFixProvider = FocusAwareFixProvider(problem),
         deltaHook: DeltaEvaluateHook? = null,
@@ -131,6 +133,8 @@ class SchedulerService(
                 baseSeed = if (baseSeed != 0L) baseSeed else rng.nextLong(),
                 shouldStop = { stopSearch() },
                 allowNative = true,
+                noImproveMs = ParallelSaCoordinator.DEFAULT_NO_IMPROVE_MS,
+                provenHardFloor = provenHardFloor,
                 onProgress = { it, rep ->
                     g1Iters = it
                     runCatching {
@@ -182,7 +186,17 @@ class SchedulerService(
                 // RSI（フォーク元分解）: 最大違反族フォーカス
         // HARD が残っている間は RSI に厚く配分（後段空振り対策）
         val hardAfterG1 = session.bestReport.hard
-        val rsiShare = if (hardAfterG1 > 0) 0.72 else 0.50
+        val improvableHard = (hardAfterG1 - provenHardFloor).coerceAtLeast(0)
+        android.util.Log.i(
+            "MAGI",
+            "STAGE hard-floor afterG1 hard=$hardAfterG1 provenFloor=$provenHardFloor improvable=$improvableHard",
+        )
+        // 改善可能な HARD が無いなら RSI を短くし soft へ（不能 HARD を掘らない）
+        val rsiShare = when {
+            hardAfterG1 <= 0 -> 0.50
+            improvableHard <= 0 -> 0.25
+            else -> 0.72
+        }
         val rsiMs = (g2Ms * rsiShare).toLong().coerceAtLeast(1L)
         val alnsMs = (g2Ms - rsiMs).coerceAtLeast(1L)
         android.util.Log.i("MAGI", "STAGE post-g1 hard=$hardAfterG1 g2Ms=$g2Ms rsiMs=$rsiMs alnsMs=$alnsMs share=$rsiShare")
