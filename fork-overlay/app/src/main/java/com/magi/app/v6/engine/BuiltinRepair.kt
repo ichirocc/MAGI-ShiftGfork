@@ -112,6 +112,85 @@ class FocusAwareFixProvider(
                 android.util.Log.d("MAGI_FIX", "covU propose s=$s d=$d ->k=$k from=${board.current[s][d]}")
                 return buildSingleMove(board, problem, s, d, k, "g2.covU.shift")
             }
+            // 単一セルでは足りない: 同日の過剰シフトから玉突き（2人交換）
+            proposeCovUChainOnDay(board, rng, d, k, have)?.let { return it }
+            // 多段 cascade（空き日へ押し出し）
+            for (s in ordered.take(6)) {
+                StructuralMoves.cascadeToCell(board, problem, s, d, k, rng, maxDepth = 3, source = "g2.covU.cascade")
+                    ?.let {
+                        android.util.Log.d("MAGI_FIX", "covU cascade s=$s d=$d ->k=$k")
+                        return it
+                    }
+            }
+        }
+        return null
+    }
+
+    /**
+     * 同日玉突き: 不足シフト k を埋めつつ、過剰シフトから1人を k へ、
+     * 可能なら元の担当者を過剰側へ入れ替える（長さ2のチェーン）。
+     */
+    private fun proposeCovUChainOnDay(
+        board: BoardView,
+        rng: Random,
+        day: Int,
+        needK: Int,
+        have: Array<IntArray>,
+    ): Move? {
+        val sd = problem.shiftDemand ?: return null
+        val overKs = (0 until problem.K).filter { k ->
+            k != needK && day in sd.indices && k < sd[day].size &&
+                have[day][k] > sd[day][k]
+        }.shuffled(rng)
+        if (overKs.isEmpty()) {
+            // 過剰が無くても、needK 以外で canDo の人を needK へ・元を REST 寄りへ
+            val donors = (0 until problem.S).filter { s ->
+                !problem.wishLocked(s, day) &&
+                    problem.canDo(s, needK) &&
+                    board.current[s][day] != needK
+            }.shuffled(rng)
+            for (s in donors) {
+                StructuralMoves.cascadeToCell(
+                    board, problem, s, day, needK, rng, maxDepth = 4, source = "g2.covU.cascade2",
+                )?.let { return it }
+            }
+            return null
+        }
+        for (ok in overKs) {
+            val receivers = (0 until problem.S).filter { s ->
+                !problem.wishLocked(s, day) &&
+                    problem.canDo(s, needK) &&
+                    board.current[s][day] == ok
+            }.shuffled(rng)
+            for (s1 in receivers) {
+                // s1: ok → needK（これだけで不足解消・過剰も減る）
+                buildSingleMove(board, problem, s1, day, needK, "g2.covU.chain1")?.let {
+                    android.util.Log.d("MAGI_FIX", "covU chain1 s=$s1 d=$day $ok->$needK")
+                    return it
+                }
+            }
+            // 2-swap: s1 が needK 以外、s2 が ok
+            val needers = (0 until problem.S).filter { s ->
+                !problem.wishLocked(s, day) &&
+                    problem.canDo(s, needK) &&
+                    board.current[s][day] != needK &&
+                    board.current[s][day] != ok
+            }.shuffled(rng)
+            val donors = (0 until problem.S).filter { s ->
+                !problem.wishLocked(s, day) && board.current[s][day] == ok
+            }.shuffled(rng)
+            for (s1 in needers) {
+                val cur1 = board.current[s1][day]
+                for (s2 in donors) {
+                    if (s1 == s2) continue
+                    // s1 → needK, s2 → cur1（玉突き交換）
+                    if (!problem.canDo(s2, cur1)) continue
+                    if (!problem.canDo(s1, needK)) continue
+                    val writes = intArrayOf(s1, day, needK, s2, day, cur1)
+                    android.util.Log.d("MAGI_FIX", "covU chain2 s1=$s1->$needK s2=$s2->$cur1 d=$day")
+                    return Move(board.version, writes, "chain_day", "g2.covU.chain2")
+                }
+            }
         }
         return null
     }
