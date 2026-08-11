@@ -43,6 +43,7 @@ class SimpleRsi(
         var rejects = 0L
         var nullMoves = 0L
         var rotates = 0
+        CoverageFocusQueue.rebuild(problem, session.current)
         var focus = pickFocus(session.currentReport, params.infeasible, rng)
             ?: hardPrefer.firstOrNull { it !in params.infeasible }
             ?: "covU"
