@@ -26,23 +26,60 @@ object UnimprovableConstraints {
         val count: Int = 1,
     )
 
+    /** report.breakdown 上で HARD 寄与しうる族キー */
+    val HARD_FAMILY_KEYS: Set<String> = setOf(
+        "c3n", "covU", "shiftU", "groupViol", "pref", "wish", "exact", "low", "high",
+    )
+
     data class Report(
         val findings: List<Finding>,
         /** RSI / G2 から除外する族 */
         val excludeFamilies: Set<String>,
-        /** 推定「探索不能」HARD 件数（参考） */
+        /** 推定「探索不能」HARD 件数（参考・主判定には使わない） */
         val provenHardUnits: Int,
     ) {
         val hardFamilies: Set<String> get() = findings.filter { it.hard }.map { it.family }.toSet()
         val softFamilies: Set<String> get() = findings.filter { !it.hard }.map { it.family }.toSet()
 
-        /** 現在 hard のうち、まだ探索で減らせる見込みがある分（下限0） */
+        /** 現在 hard のうち、まだ探索で減らせる見込みがある分（下限0）参考値 */
         fun improvableHard(currentHard: Int): Int =
             (currentHard - provenHardUnits).coerceAtLeast(0)
 
         /**
-         * 残 HARD がすべて構造的に改善不能とみなせるか。
-         * ALL: 由来の floor が無いときは false（PARTIAL だけでは full-stop しない）。
+         * breakdown 上、残っている HARD 族（値が正のもの）。
+         * hard>0 なのに空のときは「未知」として full-stop しない。
+         */
+        fun residualHardFamilies(report: ViolationReport): Set<String> {
+            val out = LinkedHashSet<String>()
+            for (k in HARD_FAMILY_KEYS) {
+                val v = report.breakdown[k] ?: 0
+                if (v > 0) out += k
+            }
+            // shiftU は covU と同一視
+            if ("shiftU" in out) {
+                out.remove("shiftU")
+                out += "covU"
+            }
+            if ("wish" in out) {
+                out.remove("wish")
+                out += "pref"
+            }
+            return out
+        }
+
+        /**
+         * 主判定: 残 HARD 族がすべて exclude に入っているときだけ true。
+         * provenHard 数値比較は使わない（単位不一致・二重計上を避ける）。
+         */
+        fun allRemainingHardExcluded(report: ViolationReport): Boolean {
+            if (report.hard <= 0) return false
+            val residual = residualHardFamilies(report)
+            if (residual.isEmpty()) return false // 未知の内訳 → 掘り続ける
+            return residual.all { it in excludeFamilies }
+        }
+
+        /**
+         * 互換: 数値床は参考。主判定は [allRemainingHardExcluded]。
          */
         fun allHardUnimprovable(currentHard: Int): Boolean =
             currentHard > 0 && provenHardUnits > 0 && improvableHard(currentHard) == 0
