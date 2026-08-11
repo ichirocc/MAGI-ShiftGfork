@@ -250,7 +250,7 @@ class ParallelSaCoordinator(
         private const val PROGRESS_MS = 5_000L
         private const val JOIN_SLACK_MS = 25_000L
         /** HARD 非更新の早期切り上げ（並列 G1） */
-        const val DEFAULT_NO_IMPROVE_MS = 10_000L
+        const val DEFAULT_NO_IMPROVE_MS = 12_000L
 
         fun safeWorkerCount(requested: Int): Int {
             val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
