@@ -724,7 +724,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
-    fun setWorkers(n: Int) { val v = n.coerceIn(1, 16); _ui.update { it.copy(workers = v) }; logOp("I", "設定変更: 並列数 → $v") }
+    fun setWorkers(n: Int) { val v = n.coerceIn(1, com.magi.app.v6.engine.parallel.ParallelSaCoordinator.MAX_PARALLEL); _ui.update { it.copy(workers = v) }; logOp("I", "設定変更: 並列数 → $v") }
     // タイムアウト上限は5分(300s)。エンジンは budgetMs を全フェーズで厳守し、超過しない（停滞時はさらに早期終了）。
     /** [ネイティブ加速 Stage4] ユーザートグル。OFF=C++チャンク不使用（番兵ゲートとは独立の意思表示）。 */
     fun setNativeAccel(on: Boolean) {
@@ -2904,15 +2904,25 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             ops.forEach { append(it).append('\n') }
             append('\n').append("==== 診断ログ（全文 ${logs.size}件）====").append('\n')
             logs.forEach { append(it).append('\n') }
-            append('\n').append("==== 保存セッションログ（${savedList.size}件）====").append('\n')
+            // 重複排除: magi_session.log と crash コピーが同一内容で三重になるのを防ぐ
+            append('\n').append("==== 保存セッションログ ====").append('\n')
+            val seenHash = HashSet<Int>()
+            var dumped = 0
             for (info in savedList) {
+                val body = runCatching { java.io.File(info.path).readText() }.getOrNull()
+                    ?: continue
+                val h = body.hashCode()
+                if (!seenHash.add(h)) continue
+                // 操作ログと完全一致する短いコピーはスキップ
+                if (body.lines().size <= 3) continue
                 append("--- FILE ").append(info.name)
                     .append(" size=").append(info.sizeBytes)
                     .append(" ---").append('\n')
-                runCatching { java.io.File(info.path).readText() }
-                    .onSuccess { append(it).append('\n') }
-                    .onFailure { append("(read failed: ${it.message})").append('\n') }
+                append(body).append('\n')
+                dumped++
+                if (dumped >= 2) break // 最新系2件まで
             }
+            if (dumped == 0) append("(保存セッションなしまたは重複のみ)").append('\n')
         }
     }
 
