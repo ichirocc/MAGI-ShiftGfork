@@ -10,6 +10,8 @@ data class EngineOptions(
     val seed: Long = 0L,
     val shouldStop: () -> Boolean = { false },
     val infeasibleFamilies: Set<String> = emptySet(),
+    /** UnimprovableConstraints.provenHardUnits — 改善不能 HARD の下限 */
+    val provenHardFloor: Int = 0,
     val deltaHook: DeltaEvaluateHook? = null,
     /** G1 並列ワーカー数。1=単一 Session（完全再現）、2..=ParallelSaCoordinator */
     val workers: Int = 1,
@@ -68,6 +70,7 @@ class EngineFacade(
             rng = rng,
             shouldStop = options.shouldStop,
             infeasible = options.infeasibleFamilies,
+            provenHardFloor = options.provenHardFloor,
             g3Backend = g3,
             fixProvider = fix,
             deltaHook = options.deltaHook,
