@@ -218,18 +218,20 @@ object FullOptimizePipeline {
                 } else null
             // 本走後に再判定（動いた不足と、なお塞がっている HARD を分離）
             unimprovable = UnimprovableConstraints.analyze(problem, art.schedule, art.report)
-            val improvHard = unimprovable.improvableHard(art.report.hard)
+            val residualFam = unimprovable.residualHardFamilies(art.report)
+            val allExcluded = unimprovable.allRemainingHardExcluded(art.report)
             android.util.Log.i(
                 "MAGI",
                 "STAGE unimprovable-after-main exclude=${unimprovable.excludeFamilies} " +
-                    "provenHard=${unimprovable.provenHardUnits} hard=${art.report.hard} improvable=$improvHard",
+                    "provenHard=${unimprovable.provenHardUnits} hard=${art.report.hard} " +
+                    "residualFamilies=$residualFam allExcluded=$allExcluded",
             )
-            // 改善可能な HARD が残っていない → 残差で掘っても無意味。予算を使わない
-            if (unimprovable.allHardUnimprovable(art.report.hard)) {
+            // 主判定: 残 HARD 族がすべて exclude のときだけ残差スキップ
+            if (allExcluded) {
                 android.util.Log.i(
                     "MAGI",
-                    "STAGE hard-residual-skip reason=all-hard-unimprovable hard=${art.report.hard} " +
-                        "floor=${unimprovable.provenHardUnits}",
+                    "STAGE hard-residual-skip reason=all-remaining-hard-excluded hard=${art.report.hard} " +
+                        "families=$residualFam exclude=${unimprovable.excludeFamilies}",
                 )
                 onProgress?.invoke(
                     SearchProgress(
@@ -298,11 +300,33 @@ object FullOptimizePipeline {
 
             val finalReport = evaluate(art.schedule)
             val finalUnimp = UnimprovableConstraints.analyze(problem, art.schedule, finalReport)
+            val finalResidual = finalUnimp.residualHardFamilies(finalReport)
+            val finalExcluded = finalUnimp.allRemainingHardExcluded(finalReport)
+            val blockedNote = finalUnimp.findings.filter { it.hard }.joinToString(";") {
+                "${it.family}:${it.reason.take(48)}"
+            }.ifEmpty { "none" }
             android.util.Log.i(
                 "MAGI",
                 "STAGE unimprovable-final provenHard=${finalUnimp.provenHardUnits} " +
                     "exclude=${finalUnimp.excludeFamilies} hard=${finalReport.hard} " +
-                    "notes=${finalUnimp.findings.size}",
+                    "residualFamilies=$finalResidual allExcluded=$finalExcluded notes=${finalUnimp.findings.size}",
+            )
+            // ユーザー向け: 不能 / 可能の分解（操作ログに載る MAGI 行）
+            android.util.Log.i(
+                "MAGI",
+                "STAGE hard-split hard=${finalReport.hard} " +
+                    "unimprovableFamilies=${finalUnimp.excludeFamilies} " +
+                    "improvableFamilies=${finalResidual - finalUnimp.excludeFamilies} " +
+                    "detail=$blockedNote",
+            )
+            onProgress?.invoke(
+                SearchProgress(
+                    "unimprovable",
+                    finalReport,
+                    0L,
+                    System.currentTimeMillis() - wall0,
+                    art.schedule,
+                ),
             )
         WeightAuditLog.logContribution("final", finalReport)
             val elapsed = System.currentTimeMillis() - wall0
