@@ -64,11 +64,18 @@ class FocusAwareFixProvider(
             android.util.Log.d("MAGI_FIX", "covU shiftDemand=null -> fallback")
             return null
         }
+        val bits = BitMasks.from(problem, board.current)
         val have = Array(problem.T) { IntArray(problem.K) }
-        for (s in 0 until problem.S) {
-            for (d in 0 until problem.T) {
-                val k = board.current[s][d]
-                if (k in 0 until problem.K) have[d][k]++
+        if (bits != null) {
+            for (d in 0 until problem.T) for (k in 0 until problem.K) {
+                have[d][k] = bits.countDayShift(d, k)
+            }
+        } else {
+            for (s in 0 until problem.S) {
+                for (d in 0 until problem.T) {
+                    val k = board.current[s][d]
+                    if (k in 0 until problem.K) have[d][k]++
+                }
             }
         }
         val defs = ArrayList<IntArray>() // [d, k, deficit]
@@ -102,9 +109,16 @@ class FocusAwareFixProvider(
         for (def in defs) {
             val d = def[0]
             val k = def[1]
-            val staffs = (0 until problem.S).filter { s ->
-                !problem.wishLocked(s, d) && problem.canDo(s, k) && board.current[s][d] != k
-            }.shuffled(rng)
+            val staffs = if (bits != null) {
+                val mask = bits.openMoversMask(d, k)
+                val tmp = ArrayList<Int>(java.lang.Long.bitCount(mask))
+                bits.forEachBit(mask, problem.S) { tmp.add(it) }
+                tmp.shuffled(rng)
+            } else {
+                (0 until problem.S).filter { s ->
+                    !problem.wishLocked(s, d) && problem.canDo(s, k) && board.current[s][d] != k
+                }.shuffled(rng)
+            }
             val ordered = staffs.sortedBy { s ->
                 val cur = board.current[s][d]
                 if (cur !in 0 until problem.K) 1
