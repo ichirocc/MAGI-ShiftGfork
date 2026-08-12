@@ -73,6 +73,7 @@ class ParallelSaCoordinator(
         )
         val lastImproveMs = AtomicLong(System.currentTimeMillis())
         val lastHard = java.util.concurrent.atomic.AtomicInteger(elite.get().report.hard)
+        var lastProgressEmit = 0L
 
         android.util.Log.i(
             "MAGI",
@@ -133,9 +134,14 @@ class ParallelSaCoordinator(
                     break
                 }
                 // proven floor のみでは切らない（excludeFamilies 主判定は Scheduler/Pipeline）
-                runCatching { onProgress?.invoke(sharedIters.get(), elite.get().report) }
+                val nowProg = System.currentTimeMillis()
+                if (nowProg - lastProgressEmit >= PROGRESS_MS) {
+                    lastProgressEmit = nowProg
+                    runCatching { onProgress?.invoke(sharedIters.get(), elite.get().report) }
+                }
                 try {
-                    Thread.sleep(PROGRESS_MS)
+                    // 切上げ判定は1s周期。UI進捗は PROGRESS_MS で間引き
+                    Thread.sleep(CUTOVER_POLL_MS)
                 } catch (_: InterruptedException) {
                     stop.set(true)
                     stopReasonLocal = StopReason.CANCELLED
@@ -255,8 +261,8 @@ class ParallelSaCoordinator(
     }
 
     companion object {
-        const val MAX_PARALLEL = 4
-        private const val SLICE_MS = 3_000L
+        const val MAX_PARALLEL = 2
+        private const val SLICE_MS = 2_000L
         private const val PROGRESS_MS = 5_000L
         private const val JOIN_SLACK_MS = 25_000L
         /** HARD 非更新の早期切り上げ（並列 G1） */
@@ -266,14 +272,14 @@ class ParallelSaCoordinator(
 
         fun safeWorkerCount(requested: Int): Int {
             val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            // freeMemory は当てにならないことがあるため、上限は常に MAX_PARALLEL=2
             val freeMb = Runtime.getRuntime().freeMemory() / (1024L * 1024L)
-            val byMem = when {
-                freeMb < 32L -> 1
-                freeMb < 64L -> 2
-                freeMb < 128L -> 3
-                else -> MAX_PARALLEL
+            val byMem = if (freeMb < 48L) 1 else MAX_PARALLEL
+            val n = requested.coerceIn(1, minOf(MAX_PARALLEL, cores, byMem))
+            if (n != requested) {
+                android.util.Log.w("MAGI", "safeWorkerCount $requested → $n (max=$MAX_PARALLEL freeMb=$freeMb cores=$cores)")
             }
-            return requested.coerceIn(1, minOf(MAX_PARALLEL, cores, byMem))
+            return n
         }
     }
 }
