@@ -22,9 +22,33 @@ jobs:
           java-version: "17"
       - name: Install kotlinc
         run: |
-          curl -sL "https://github.com/JetBrains/kotlin/releases/download/v1.9.25/kotlin-compiler-1.9.25.zip" -o /tmp/kotlin.zip
+          set -euo pipefail
+          URL="https://github.com/JetBrains/kotlin/releases/download/v1.9.25/kotlin-compiler-1.9.25.zip"
+          # curl exit 56 = recv error（一時ネットワーク）→ リトライ + wget フォールバック
+          ok=0
+          for i in 1 2 3 4 5; do
+            echo "kotlinc download attempt $i..."
+            if curl -fL --retry 3 --retry-delay 2 --retry-all-errors \
+                --connect-timeout 30 --max-time 180 \
+                "$URL" -o /tmp/kotlin.zip \
+              || wget -q --tries=3 --timeout=30 -O /tmp/kotlin.zip "$URL"; then
+              if [ -s /tmp/kotlin.zip ] && head -c 2 /tmp/kotlin.zip | grep -q PK; then
+                ok=1
+                break
+              fi
+            fi
+            echo "attempt $i failed, sleep $((i*3))s"
+            rm -f /tmp/kotlin.zip
+            sleep $((i * 3))
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error::Failed to download kotlin-compiler after retries (curl exit 56 class)"
+            exit 1
+          fi
           unzip -q /tmp/kotlin.zip -d "$HOME"
           echo "$HOME/kotlinc/bin" >> "$GITHUB_PATH"
+          "$HOME/kotlinc/bin/kotlinc" -version
+
       - name: Compile + CiSmoke
         env:
           MAGI_BUDGET_MS: "1500"
