@@ -58,6 +58,24 @@ class MainOptimizeBridge(
             val rep = evaluate(initial)
             return com.magi.app.v6.engine.RunArtifacts(schedule = initial, report = rep)
         }
+        // ホットパス: Native 差分のみ（フル評価は hook 内の失敗/パリティ時）
+        val effectiveDelta = deltaHook ?: run {
+            val probe = nativeProbe
+            if (probe is com.magi.app.v6.engine.nativex.NativeBridgeProbe &&
+                com.magi.app.v6.NativeGate.usable &&
+                com.magi.app.v6.NativeBridge.available
+            ) {
+                val hook = com.magi.app.v6.engine.nativex.NativeDeltaEvaluateHook(probe, evaluate)
+                android.util.Log.i("MAGI_DELTA", "hotpath=native-delta-only probe=ok")
+                hook
+            } else {
+                android.util.Log.w(
+                    "MAGI_DELTA",
+                    "hotpath=full-eval (native delta unavailable usable=${com.magi.app.v6.NativeGate.usable})",
+                )
+                null
+            }
+        }
         val facade = EngineFacade(
             problem = problem,
             evaluate = evaluate,
@@ -65,7 +83,7 @@ class MainOptimizeBridge(
             g3Backend = buildG3(seed),
             fixProvider = buildFixProvider(),
         )
-        return facade.optimize(
+        val art = facade.optimize(
             initial = initial,
             options = EngineOptions(
                 totalBudgetMs = totalBudgetMs,
@@ -74,12 +92,16 @@ class MainOptimizeBridge(
                 shouldStop = shouldStop,
                 infeasibleFamilies = infeasibleFamilies,
                 provenHardFloor = provenHardFloor,
-                deltaHook = deltaHook,
+                deltaHook = effectiveDelta,
                 workers = workers,
                 nativeProbe = nativeProbe,
                 progressListener = progressListener,
             ),
         )
+        if (effectiveDelta is com.magi.app.v6.engine.nativex.NativeDeltaEvaluateHook) {
+            android.util.Log.i("MAGI_DELTA", "end ${effectiveDelta.statsLine()}")
+        }
+        return art
     }
 
     private fun buildFixProvider(): FocusFixProvider {
