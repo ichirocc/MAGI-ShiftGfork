@@ -264,6 +264,8 @@ class ParallelSaCoordinator(
         const val MAX_PARALLEL = 2
         private const val SLICE_MS = 2_000L
         private const val PROGRESS_MS = 5_000L
+        /** 停滞・構造切上げのポーリング間隔（UI進捗は PROGRESS_MS） */
+        private const val CUTOVER_POLL_MS = 1_000L
         private const val JOIN_SLACK_MS = 25_000L
         /** HARD 非更新の早期切り上げ（並列 G1） */
         const val DEFAULT_NO_IMPROVE_MS = 12_000L
