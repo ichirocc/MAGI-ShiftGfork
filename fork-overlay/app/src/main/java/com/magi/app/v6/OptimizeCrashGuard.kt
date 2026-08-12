@@ -19,8 +19,10 @@ object OptimizeCrashGuard {
 
     fun beforeOptimize(workers: Int, nativeUserPref: Boolean): Int {
         val w = ParallelSaCoordinator.safeWorkerCount(workers)
+        // 常に1行出す（操作ログ検証用）
+        Log.i(TAG, "OptimizeCrashGuard: workers $workers → $w (MAX_PARALLEL=${ParallelSaCoordinator.MAX_PARALLEL})")
         if (w != workers) {
-            Log.w(TAG, "OptimizeCrashGuard: workers $workers → $w (mem/cores)")
+            Log.w(TAG, "OptimizeCrashGuard: clamped $workers → $w to prevent OOM/LMK")
         }
 
         NativeGate.userEnabled = nativeUserPref && NativeBridge.available
