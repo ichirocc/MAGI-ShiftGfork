@@ -74,7 +74,7 @@ class EngineFacade(
             g3Backend = g3,
             fixProvider = fix,
             deltaHook = options.deltaHook,
-            workers = options.workers.coerceIn(1, 16),
+            workers = options.workers.coerceIn(1, com.magi.app.v6.engine.parallel.ParallelSaCoordinator.MAX_PARALLEL),
             baseSeed = options.seed,
             nativeProbe = options.nativeProbe,
             progressListener = options.progressListener,
