@@ -40,7 +40,7 @@ data class G1Params(
     /** 進捗ハートビート（UI の 0回固着防止）。(iters, bestReport) */
     val onProgressTick: ((Long, ViolationReport) -> Unit)? = null,
     /** ハートビート間隔 ms */
-    val progressEveryMs: Long = 1500L,
+    val progressEveryMs: Long = 4_000L,
 )
 
 /**
