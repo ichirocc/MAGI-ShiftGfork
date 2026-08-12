@@ -51,6 +51,7 @@ class SearchSessionFull(
         bits?.let {
             it.rebuildFrom(current)
             it.setWishLockFrom(problem)
+            it.setCanDoFrom(problem)
         }
     }
 
