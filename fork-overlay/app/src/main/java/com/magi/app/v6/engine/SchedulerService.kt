@@ -100,86 +100,43 @@ class SchedulerService(
         android.util.Log.i("MAGI", "STAGE budget g1Ms=$g1Ms g2Ms=$g2Ms ratio=$g1Ratio workers=$workers")
         fun stopSearch() = shouldStop() || System.currentTimeMillis() >= searchDl
 
-        // G1: workers==1 → 単一 Session（再現性）。workers>=2 → 独立並列 SA → best を本 session に吸収
+        // G1: 本番は常に単一 SearchSessionFull。
+        // ParallelSaCoordinator は Session×N + elite deepCopy で実機 LMK するため無効化。
+        // workers は将来の「複数シード逐次再スタート」用に残し、並列 Session は作らない。
         var g1Iters = 0L
-        if (workers <= 1) {
-            G1LocalAnnealer(problem, session, packedScore).run(
-                G1Params(
-                    budgetMs = g1Ms,
-                    shouldStop = { stopSearch() },
-                    nativeProbe = nativeProbe,
-                    maxIters = fixedItersG1,
-                    onProgressTick = { it, rep ->
-                        g1Iters = it
-                        progressListener?.onProgress(
-                            SearchProgress(
-                                phase = "g1",
-                                report = rep,
-                                iters = it,
-                                elapsedMs = System.currentTimeMillis() - started,
-                                schedule = null, // 高頻度なので盤面は載せない
-                            ),
-                        )
-                    },
-                ),
-                rng,
+        if (workers > 1) {
+            android.util.Log.w(
+                "MAGI",
+                "STAGE g1-serial-forced requestedWorkers=$workers reason=avoid-Session-xN-OOM",
             )
-        } else {
-            android.util.Log.i("MAGI", "STAGE g1-parallel-enter workers=$workers g1Ms=$g1Ms")
-            val par = ParallelSaCoordinator(problem, evaluate, better, deltaHook).run(
-                initial = session.current,
-                workers = workers,
-                budgetMs = g1Ms,
-                baseSeed = if (baseSeed != 0L) baseSeed else rng.nextLong(),
-                shouldStop = { stopSearch() },
-                allowNative = true,
-                noImproveMs = ParallelSaCoordinator.DEFAULT_NO_IMPROVE_MS,
-                provenHardFloor = provenHardFloor,
-                onProgress = { it, rep ->
-                    g1Iters = it
-                    runCatching {
-                        progressListener?.onProgress(
-                            SearchProgress(
-                                phase = "g1-parallel",
-                                report = rep,
-                                iters = it,
-                                elapsedMs = System.currentTimeMillis() - started,
-                                schedule = null,
-                            ),
-                        )
-                    }
-                },
-            )
-            g1Iters = par.totalIters
-            android.util.Log.i("MAGI", "STAGE g1-parallel-exit iters=$g1Iters hard=${par.report.hard}")
-            session.replaceBestIfBetter(par.schedule, par.report)
-            // 並列は Kotlin のみ。マージ後に単一スレッドで native 加速（安全）
-            if (nativeProbe != null && !stopSearch()) {
-                val refineMs = minOf(8_000L, (g1Ms / 8L).coerceAtLeast(2_000L))
-                android.util.Log.i("MAGI", "STAGE g1-native-refine-enter ms=$refineMs")
-                val refined = G1LocalAnnealer(problem, session, packedScore).run(
-                    G1Params(
-                        budgetMs = refineMs,
-                        shouldStop = { stopSearch() },
-                        nativeProbe = nativeProbe,
-                        earlyRejectHardIncrease = true,
-                        earlyRejectColdWorse = false,
-                    ),
-                    rng,
-                )
-                g1Iters += refined
-                android.util.Log.i("MAGI", "STAGE g1-native-refine-exit iters=$g1Iters hard=${session.bestReport.hard}")
-                progressListener?.onProgress(
-                    SearchProgress(
-                        phase = "g1-native-refine",
-                        report = session.bestReport,
-                        iters = g1Iters,
-                        elapsedMs = System.currentTimeMillis() - started,
-                        schedule = null,
-                    ),
-                )
-            }
         }
+        android.util.Log.i("MAGI", "STAGE g1-serial-enter g1Ms=$g1Ms")
+        G1LocalAnnealer(problem, session, packedScore).run(
+            G1Params(
+                budgetMs = g1Ms,
+                shouldStop = { stopSearch() },
+                nativeProbe = nativeProbe,
+                maxIters = fixedItersG1,
+                progressEveryMs = 4_000L,
+                onProgressTick = { it, rep ->
+                    g1Iters = it
+                    progressListener?.onProgress(
+                        SearchProgress(
+                            phase = "g1",
+                            report = rep,
+                            iters = it,
+                            elapsedMs = System.currentTimeMillis() - started,
+                            schedule = null,
+                        ),
+                    )
+                },
+            ),
+            rng,
+        )
+        android.util.Log.i(
+            "MAGI",
+            "STAGE g1-serial-exit iters=$g1Iters hard=${session.bestReport.hard} soft=${session.bestReport.soft}",
+        )
         g4.considerStrict(session.best, session.bestReport)
         emit("g1", iters = g1Iters)
 
