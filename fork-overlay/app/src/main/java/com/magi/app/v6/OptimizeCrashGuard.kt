@@ -20,7 +20,7 @@ object OptimizeCrashGuard {
     fun beforeOptimize(workers: Int, nativeUserPref: Boolean): Int {
         val w = ParallelSaCoordinator.safeWorkerCount(workers)
         // 常に1行出す（操作ログ検証用）
-        Log.i(TAG, "OptimizeCrashGuard: workers $workers → $w (MAX_PARALLEL=${ParallelSaCoordinator.MAX_PARALLEL})")
+        Log.i(TAG, "OptimizeCrashGuard: workers $workers → $w (MAX_PARALLEL=${ParallelSaCoordinator.MAX_PARALLEL}; parallel-off-if-1)")
         if (w != workers) {
             Log.w(TAG, "OptimizeCrashGuard: clamped $workers → $w to prevent OOM/LMK")
         }
