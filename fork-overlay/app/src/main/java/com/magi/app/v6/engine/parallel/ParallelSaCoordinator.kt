@@ -133,6 +133,16 @@ class ParallelSaCoordinator(
                     stopReasonLocal = StopReason.FIXED_POINT
                     break
                 }
+                if (isMemoryCritical()) {
+                    android.util.Log.w(
+                        "MAGI",
+                        "STAGE parallel-cutover reason=memory-critical hard=${er.hard} freeMb=" +
+                            (Runtime.getRuntime().freeMemory() / (1024L * 1024L)),
+                    )
+                    stop.set(true)
+                    stopReasonLocal = StopReason.DEADLINE
+                    break
+                }
                 // proven floor のみでは切らない（excludeFamilies 主判定は Scheduler/Pipeline）
                 val nowProg = System.currentTimeMillis()
                 if (nowProg - lastProgressEmit >= PROGRESS_MS) {
@@ -261,8 +271,8 @@ class ParallelSaCoordinator(
     }
 
     companion object {
-        const val MAX_PARALLEL = 2
-        private const val SLICE_MS = 2_000L
+        const val MAX_PARALLEL = 1
+        private const val SLICE_MS = 1_500L
         private const val PROGRESS_MS = 5_000L
         /** 停滞・構造切上げのポーリング間隔（UI進捗は PROGRESS_MS） */
         private const val CUTOVER_POLL_MS = 1_000L
@@ -273,15 +283,22 @@ class ParallelSaCoordinator(
         const val STRUCTURE_CUTOVER_MS = 3_000L
 
         fun safeWorkerCount(requested: Int): Int {
-            val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-            // freeMemory は当てにならないことがあるため、上限は常に MAX_PARALLEL=2
+            // 3.374 実機: workers=2 でも ~14s で LMK。当面は常に 1。
             val freeMb = Runtime.getRuntime().freeMemory() / (1024L * 1024L)
-            val byMem = if (freeMb < 48L) 1 else MAX_PARALLEL
-            val n = requested.coerceIn(1, minOf(MAX_PARALLEL, cores, byMem))
-            if (n != requested) {
-                android.util.Log.w("MAGI", "safeWorkerCount $requested → $n (max=$MAX_PARALLEL freeMb=$freeMb cores=$cores)")
+            val n = 1
+            if (requested != n) {
+                android.util.Log.w(
+                    "MAGI",
+                    "safeWorkerCount $requested → $n (MAX_PARALLEL=$MAX_PARALLEL freeMb=$freeMb; parallel disabled for stability)",
+                )
             }
             return n
+        }
+
+        /** メモリ逼迫なら true（切上げ用） */
+        fun isMemoryCritical(thresholdMb: Long = 24L): Boolean {
+            val freeMb = Runtime.getRuntime().freeMemory() / (1024L * 1024L)
+            return freeMb < thresholdMb
         }
     }
 }
