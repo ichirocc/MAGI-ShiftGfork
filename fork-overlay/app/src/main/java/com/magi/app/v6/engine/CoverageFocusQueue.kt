@@ -34,30 +34,35 @@ object CoverageFocusQueue {
             targets = emptyList()
             return
         }
+        val bits = BitMasks.from(problem, schedule)
         val list = ArrayList<Target>()
         for (d in 0 until problem.T) {
             val row = sd.getOrNull(d) ?: continue
             for (k in 0 until minOf(problem.K, row.size)) {
                 val need = row[k]
                 if (need <= 0) continue
-                var have = 0
-                for (s in 0 until problem.S) {
-                    if (schedule[s][d] == k) have++
+                val have: Int
+                val movers: Int
+                if (bits != null) {
+                    have = bits.countDayShift(d, k)
+                    if (have >= need) continue
+                    movers = bits.openMoversCount(d, k)
+                } else {
+                    have = (0 until problem.S).count { schedule[it][d] == k }
+                    if (have >= need) continue
+                    movers = (0 until problem.S).count { s ->
+                        !problem.wishLocked(s, d) && problem.canDo(s, k) && schedule[s][d] != k
+                    }
                 }
-                if (have >= need) continue
-                val deficit = need - have
-                val movers = (0 until problem.S).count { s ->
-                    !problem.wishLocked(s, d) && problem.canDo(s, k) && schedule[s][d] != k
-                }
-                if (movers <= 0) continue // 塞がった不足はキューに載せない
-                list += Target(d, k, deficit, movers)
+                if (movers <= 0) continue
+                list += Target(d, k, need - have, movers)
             }
         }
         list.sortWith(compareByDescending<Target> { it.deficit }.thenByDescending { it.movers })
         targets = list
         android.util.Log.i(
             "MAGI_FIX",
-            "CoverageFocusQueue size=${list.size} top=" +
+            "CoverageFocusQueue size=${list.size} bitOps=${bits != null} top=" +
                 list.take(5).joinToString { "d${it.day}/k${it.shift}(-${it.deficit},m${it.movers})" },
         )
     }
