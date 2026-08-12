@@ -1165,6 +1165,11 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             _ui.value.workers,
             _ui.value.nativeAccel,
         )
+        if (safeWorkers != _ui.value.workers) {
+            logOp("W", "並列数を ${safeWorkers} に制限（OOM防止・設定=${_ui.value.workers}）")
+        } else {
+            logOp("I", "並列 workers=$safeWorkers (MAX=${com.magi.app.v6.engine.parallel.ParallelSaCoordinator.MAX_PARALLEL})")
+        }
         job = viewModelScope.launch {
             try {
                 // [再実行 keep-best] 実行開始時の入力解(sched0)の違反を評価し、完了時の採用判定の基準にする。
