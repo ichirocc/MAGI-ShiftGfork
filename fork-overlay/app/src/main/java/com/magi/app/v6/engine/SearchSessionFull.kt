@@ -40,6 +40,14 @@ class SearchSessionFull(
         if (useBitMasks) BitMasks(problem.S, problem.T, problem.K) else null
     private var lastReject: TransitionResult = TransitionResult.Rejected(RejectReason.NOOP)
     private val touchBuf = LongArray(128)
+    /**
+     * [メモリ削減] prepare() の exact-pin 追跡で touchBuf と対に使う「変更前カウント」の
+     * 使い回しバッファ。旧実装は `IntArray(touchBuf.size)` を prepare() 呼び出しのたび
+     * （＝tryTransition/tryMetropolis/tryLahc 経由で SA/G1 の毎反復）新規確保しており、
+     * flatScratch と同種の GC 圧迫源だった。使うのは常に index 0..nTouch-1 のみ（nTouch は
+     * 毎回0から積み直す）で、touchBuf と同じ単一スレッド専用の前提で安全に使い回せる。
+     */
+    private val beforeCntBuf = IntArray(touchBuf.size)
 
     /**
      * [メモリ削減] `nativePrefilter`（RSI/G2 修復のホットループから
@@ -211,7 +219,7 @@ class SearchSessionFull(
         undo.clear()
         undo.ensureCapacity(n / 3)
         var nTouch = 0
-        val beforeCnt = IntArray(touchBuf.size)
+        val beforeCnt = beforeCntBuf
         i = 0
         while (i < n) {
             val s = w[i]; val d = w[i + 1]; val sh = w[i + 2]
