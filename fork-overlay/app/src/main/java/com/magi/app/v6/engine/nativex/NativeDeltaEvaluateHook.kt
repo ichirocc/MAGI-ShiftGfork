@@ -1,8 +1,10 @@
 package com.magi.app.v6.engine.nativex
 
+import com.magi.app.v6.Problem
 import com.magi.app.v6.ViolationReport
 import com.magi.app.v6.ViolationReports
 import com.magi.app.v6.engine.DeltaEvaluateHook
+import com.magi.app.v6.engine.HardFamilyDelta
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -12,10 +14,13 @@ import java.util.concurrent.atomic.AtomicLong
  * nativeDeltaEval(before, writes) する。
  */
 class NativeDeltaEvaluateHook(
+    private val problem: Problem,
     private val probe: NativeBridgeProbe,
     private val fullEvaluate: (Array<IntArray>) -> ViolationReport,
     /** 何手に1回フル評価で breakdown / パリティを取り直す */
     private val parityEvery: Int = 8_000,
+    /** 差分ヒット時に covU/c3n を軽量再集計して breakdown に載せる */
+    private val partialHardBreakdown: Boolean = true,
 ) : DeltaEvaluateHook {
 
     private val deltaHits = AtomicLong(0)
@@ -72,7 +77,12 @@ class NativeDeltaEvaluateHook(
         deltaHits.incrementAndGet()
         val hard = d.hardAfter.coerceAtLeast(0)
         val soft = d.softAfter.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-        return ViolationReports.fromDeltaPacked(hard, soft, d.afterPacked)
+        val bd = if (partialHardBreakdown) {
+            HardFamilyDelta.breakdown(HardFamilyDelta.count(problem, schedule))
+        } else {
+            emptyMap()
+        }
+        return ViolationReports.fromDeltaPacked(hard, soft, d.afterPacked, breakdown = bd)
     }
 
     fun statsLine(): String =
