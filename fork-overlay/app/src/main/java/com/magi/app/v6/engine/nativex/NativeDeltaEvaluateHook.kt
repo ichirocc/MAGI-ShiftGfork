@@ -56,11 +56,18 @@ class NativeDeltaEvaluateHook(
             return fullEvaluate(schedule)
         }
         deltaHits.incrementAndGet()
+        val hard = d.hardAfter.coerceAtLeast(0)
         val soft = d.softAfter.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-        return ViolationReport.of(
-            hard = d.hardAfter.coerceAtLeast(0),
+        // app-base の ViolationReport に of() は無い（MirrorCore の data class）
+        return ViolationReport(
+            violations = emptyMap(),
+            needViolations = emptyMap(),
+            countViolations = emptyMap(),
+            breakdown = emptyMap(),
+            total = hard + soft,
+            hard = hard,
             soft = soft,
-            weightedScore = d.afterPacked,
+            weightedScore = d.afterPacked.toDouble(),
         )
     }
 
