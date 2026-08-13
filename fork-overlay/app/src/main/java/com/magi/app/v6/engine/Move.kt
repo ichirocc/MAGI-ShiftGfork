@@ -55,6 +55,12 @@ enum class RejectReason {
     NOT_BETTER,
 }
 
+/**
+ * **回数ピン（lo==hi の Exact Count）**専用ポリシー。
+ * 希望固定（wish pin）とは別物 — wish は [Problem.wishLocked] / RejectReason.WISH_PIN。
+ *
+ * 別名の意図: CountPinPolicy（回数） vs WishPin（希望）。歴史的名称 ExactCountPolicy を維持。
+ */
 enum class ExactCountPolicy {
     /**
      * 変更前に充足（count==lo）していた lo==hi ピンを、変更後に崩す手だけ拒否。
@@ -64,6 +70,9 @@ enum class ExactCountPolicy {
     /** ピン対象シフトが載っているセルの書き換え自体を禁止 */
     IMMUTABLE,
 }
+
+/** [ExactCountPolicy] の意味づけ別名（ドキュメント・呼び出し側の可読性用） */
+typealias CountPinPolicy = ExactCountPolicy
 
 sealed interface TransitionResult {
     data object AcceptedBest : TransitionResult
