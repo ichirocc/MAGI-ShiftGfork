@@ -2286,6 +2286,21 @@ Java_com_magi_app_v6_NativeBridge_nativeFullEval(JNIEnv* env, jclass, jlong hand
 // 高速化: SaChunk を1回構築し、各セルを deltaApply（影響スライスのみ再計算）。
 // schedule は受理時のみ書き戻す。戻り値 long[4] = { status, score, hard, soft }
 // status: 0=reject 1=accept_current 2=accept_best_hint
+// [3.380] JNI ホットパス用スクラッチ（thread_local で容量再利用・毎呼び出し new を避ける）
+namespace {
+struct MagiJniScratch {
+    std::vector<int> a;
+    std::vector<int> w;
+    std::vector<uint8_t> seen;
+    struct Ch { int s, d, oldv, sh; };
+    std::vector<Ch> ch;
+};
+inline MagiJniScratch& jniScratch() {
+    thread_local MagiJniScratch s;
+    return s;
+}
+}  // namespace
+
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
         JNIEnv* env, jclass, jlong handle, jintArray schedArr, jintArray writesArr,
@@ -2303,24 +2318,25 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
         env->SetLongArrayRegion(out, 0, 4, z);
         return out;
     }
-    std::vector<int> a((size_t)n);
-    env->GetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(a.data()));
-    std::vector<jint> w((size_t)nw);
-    env->GetIntArrayRegion(writesArr, 0, nw, w.data());
+    MagiJniScratch& sc = jniScratch();
+    sc.a.resize((size_t)n);
+    sc.w.resize((size_t)nw);
+    sc.seen.assign((size_t)n, 0);
+    sc.ch.clear();
+    if (sc.ch.capacity() < (size_t)(nw / 3)) sc.ch.reserve((size_t)(nw / 3));
+    env->GetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(sc.a.data()));
+    env->GetIntArrayRegion(writesArr, 0, nw, reinterpret_cast<jint*>(sc.w.data()));
 
-    struct Ch { int s, d, oldv, sh; };
-    std::vector<Ch> ch;
-    std::vector<uint8_t> seen((size_t)n, 0);
     for (jsize i = 0; i < nw; i += 3) {
-        int s = (int)w[i], d = (int)w[i + 1], sh = (int)w[i + 2];
+        int s = sc.w[(size_t)i], d = sc.w[(size_t)i + 1], sh = sc.w[(size_t)i + 2];
         if (s < 0 || s >= p->S || d < 0 || d >= p->T || sh < 0 || sh >= p->K) {
             env->SetLongArrayRegion(out, 0, 4, z);
             return out;
         }
         size_t cell = (size_t)s * (size_t)p->T + (size_t)d;
-        if (seen[cell]) { env->SetLongArrayRegion(out, 0, 4, z); return out; }
-        seen[cell] = 1;
-        int oldv = a[cell];
+        if (sc.seen[cell]) { env->SetLongArrayRegion(out, 0, 4, z); return out; }
+        sc.seen[cell] = 1;
+        int oldv = sc.a[cell];
         if (oldv == sh) continue;
         int wish = p->wish[(size_t)s * (size_t)p->T + (size_t)d];
         if (wish >= 0 && p->cd(s, wish) && oldv != sh) {
@@ -2331,27 +2347,27 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
             env->SetLongArrayRegion(out, 0, 4, z);
             return out;
         }
-        ch.push_back({s, d, oldv, sh});
+        sc.ch.push_back({s, d, oldv, sh});
     }
-    if (ch.empty()) {
+    if (sc.ch.empty()) {
         env->SetLongArrayRegion(out, 0, 4, z);
         return out;
     }
 
     // 差分評価: 1 回の full 初期化 + |ch| 回の deltaApply（フル評価2回より高速）
-    SaChunk st(*p, a.data(), /*seed*/1ULL);
+    SaChunk st(*p, sc.a.data(), /*seed*/1ULL);
     const long long before = st.score;
-    for (auto& c : ch) {
+    for (auto& c : sc.ch) {
         st.deltaApply(c.s, c.d, c.sh);
-        a[(size_t)c.s * (size_t)p->T + (size_t)c.d] = c.sh;
+        sc.a[(size_t)c.s * (size_t)p->T + (size_t)c.d] = c.sh;
     }
     const long long after = st.score;
     // 自己整合（稀なビット/デルタドリフト検出 → reject で Kotlin へ）
-    const long long verify = fullEvalCombined(*p, a.data());
+    const long long verify = fullEvalCombined(*p, sc.a.data());
     if (verify != after) {
         // ドリフト時はフル評価結果を採用しつつ厳密比較（加速は諦めるが正しさ優先）
         long long parts[2];
-        fullEvalParts(*p, a.data(), parts);
+        fullEvalParts(*p, sc.a.data(), parts);
         auto reject = [&]() {
             env->SetLongArrayRegion(out, 0, 4, z);
             return out;
@@ -2359,7 +2375,7 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
         if (mode == 0 && verify >= before) return reject();
         if (mode == 1 && verify / 1000000000LL > before / 1000000000LL) return reject();
         if (mode == 2 && verify > before) return reject();
-        env->SetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(a.data()));
+        env->SetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(sc.a.data()));
         jlong ok[4] = { verify < before ? 2 : 1, (jlong)verify, (jlong)parts[0], (jlong)parts[1] };
         env->SetLongArrayRegion(out, 0, 4, ok);
         return out;
@@ -2385,7 +2401,7 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
     } else {
         if (after > before) return reject();
     }
-    env->SetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(a.data()));
+    env->SetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(sc.a.data()));
     jlong ok[4] = { after < before ? 2 : 1, (jlong)after, (jlong)parts[0], (jlong)parts[1] };
     env->SetLongArrayRegion(out, 0, 4, ok);
     return out;
@@ -2410,15 +2426,16 @@ Java_com_magi_app_v6_NativeBridge_nativeDeltaEval(
         env->SetLongArrayRegion(out, 0, 4, z);
         return out;
     }
-    std::vector<int> a((size_t)n);
-    env->GetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(a.data()));
-    std::vector<jint> w((size_t)nw);
-    env->GetIntArrayRegion(writesArr, 0, nw, w.data());
+    MagiJniScratch& sc = jniScratch();
+    sc.a.resize((size_t)n);
+    sc.w.resize((size_t)nw);
+    env->GetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(sc.a.data()));
+    env->GetIntArrayRegion(writesArr, 0, nw, reinterpret_cast<jint*>(sc.w.data()));
 
-    SaChunk st(*p, a.data(), 1ULL);
+    SaChunk st(*p, sc.a.data(), 1ULL);
     const long long before = st.score;
     for (jsize i = 0; i < nw; i += 3) {
-        int s = (int)w[i], d = (int)w[i + 1], sh = (int)w[i + 2];
+        int s = sc.w[(size_t)i], d = sc.w[(size_t)i + 1], sh = sc.w[(size_t)i + 2];
         if (s < 0 || s >= p->S || d < 0 || d >= p->T || sh < 0 || sh >= p->K) {
             env->SetLongArrayRegion(out, 0, 4, z);
             return out;
