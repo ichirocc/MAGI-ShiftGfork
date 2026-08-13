@@ -7,6 +7,7 @@
 #include <cstring>
 #include <random>
 #include <vector>
+#include <memory>
 
 // [ネイティブ加速 Stage2] Evaluator.kt の忠実な C++ 移植（fullEvalParts 相当）。
 // Kotlin 実装が常に「正」: 実行時に Kotlin Evaluator と同一盤面で hard/soft を照合し
@@ -348,17 +349,29 @@ struct SaChunk {
         }
     }
 
-    // 盤面を差し替えて counts(ssn/dsn/wd)と score を再初期化（rng 系列は継続）。restart 境界用。
+    // 盤面を差し替えて counts(ssn/dsn/wd/bit)と score を再初期化（rng 系列は継続）。
+    // [3.381] ssn/dsn/rowMask を盤面から再構築（未初期化のまま deltaApply しない）。
     void resetBoard(const int* cur) {
         a.assign(cur, cur + (size_t)S * T);
         ssn.assign((size_t)S * K, 0);
         dsn.assign((size_t)T * K, 0);
         wd.assign((size_t)S * K * 7, 0);
+        if (useBits) {
+            rowMask.assign((size_t)S * K, 0ULL);
+            dayShiftMask.assign((size_t)T * K, 0ULL);
+        }
         for (int i = 0; i < S; i++) {
             const int* row = &a[(size_t)i * T];
             for (int j = 0; j < T; j++) {
                 int k = row[j];
-                if (k >= 0 && k < K) wd[((size_t)i * K + k) * 7 + (p.dow0 + j) % 7]++;
+                if (k < 0 || k >= K) continue;
+                ssn[(size_t)i * K + k]++;
+                dsn[(size_t)j * K + k]++;
+                wd[((size_t)i * K + k) * 7 + (p.dow0 + j) % 7]++;
+                if (useBits) {
+                    rowMask[(size_t)i * K + k] |= (1ULL << j);
+                    dayShiftMask[(size_t)j * K + k] |= (1ULL << i);
+                }
             }
         }
         score = fullEvalCombined(p, a.data());
@@ -2286,7 +2299,8 @@ Java_com_magi_app_v6_NativeBridge_nativeFullEval(JNIEnv* env, jclass, jlong hand
 // 高速化: SaChunk を1回構築し、各セルを deltaApply（影響スライスのみ再計算）。
 // schedule は受理時のみ書き戻す。戻り値 long[4] = { status, score, hard, soft }
 // status: 0=reject 1=accept_current 2=accept_best_hint
-// [3.380] JNI ホットパス用スクラッチ（thread_local で容量再利用・毎呼び出し new を避ける）
+// [3.380/3.381] JNI ホットパス用スクラッチ + SaChunk プローブ常駐
+// thread_local: handle 単位の単スレッド JNI（並列 Session は本番無効）を前提に容量再利用。
 namespace {
 struct MagiJniScratch {
     std::vector<int> a;
@@ -2298,6 +2312,20 @@ struct MagiJniScratch {
 inline MagiJniScratch& jniScratch() {
     thread_local MagiJniScratch s;
     return s;
+}
+struct MagiProbeCache {
+    const MagiProblem* problem = nullptr;
+    std::unique_ptr<SaChunk> chunk;
+};
+inline SaChunk& jniProbeChunk(MagiProblem* p, const int* board) {
+    thread_local MagiProbeCache cache;
+    if (cache.chunk == nullptr || cache.problem != p) {
+        cache.chunk = std::make_unique<SaChunk>(*p, board, 1ULL);
+        cache.problem = p;
+    } else {
+        cache.chunk->resetBoard(board);
+    }
+    return *cache.chunk;
 }
 }  // namespace
 
@@ -2355,7 +2383,7 @@ Java_com_magi_app_v6_NativeBridge_nativeTryWrites(
     }
 
     // 差分評価: 1 回の full 初期化 + |ch| 回の deltaApply（フル評価2回より高速）
-    SaChunk st(*p, sc.a.data(), /*seed*/1ULL);
+    SaChunk& st = jniProbeChunk(p, sc.a.data());
     const long long before = st.score;
     for (auto& c : sc.ch) {
         st.deltaApply(c.s, c.d, c.sh);
@@ -2432,7 +2460,7 @@ Java_com_magi_app_v6_NativeBridge_nativeDeltaEval(
     env->GetIntArrayRegion(schedArr, 0, n, reinterpret_cast<jint*>(sc.a.data()));
     env->GetIntArrayRegion(writesArr, 0, nw, reinterpret_cast<jint*>(sc.w.data()));
 
-    SaChunk st(*p, sc.a.data(), 1ULL);
+    SaChunk& st = jniProbeChunk(p, sc.a.data());
     const long long before = st.score;
     for (jsize i = 0; i < nw; i += 3) {
         int s = sc.w[(size_t)i], d = sc.w[(size_t)i + 1], sh = sc.w[(size_t)i + 2];
