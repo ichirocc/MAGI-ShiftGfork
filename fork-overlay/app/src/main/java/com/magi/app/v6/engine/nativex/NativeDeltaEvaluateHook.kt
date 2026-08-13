@@ -23,6 +23,17 @@ class NativeDeltaEvaluateHook(
     private val parityHits = AtomicLong(0)
     private var moves = 0
 
+    /**
+     * [メモリ削減] evaluateAfterMove は SA の探索ループから accept 判定のたび（=SearchSessionFull.prepare
+     * 経由で毎手）呼ばれるホットパス。盤面の形（S×T）は1回の optimize() 実行中は不変なので、毎回
+     * IntArray(S*T) を新規確保する代わりに使い回すスクラッチバッファへ書き込む（GC 圧迫の削減）。
+     * NativeDeltaEvaluateHook は MainOptimizeBridge.optimize が1回の optimize() ごとに1個だけ生成し
+     * 単一の SearchSessionFull へ渡すため、単一スレッドからしか呼ばれない（MAX_PARALLEL=1 が
+     * EngineFacade.optimize の workers.coerceIn で保証）。将来 MAX_PARALLEL を上げる場合は
+     * ワーカーごとに別インスタンスにするか、このスクラッチを分離すること。
+     */
+    private var flatScratch: IntArray? = null
+
     override fun evaluateAfterMove(
         schedule: Array<IntArray>,
         writes: IntArray,
@@ -39,7 +50,9 @@ class NativeDeltaEvaluateHook(
             fullFalls.incrementAndGet()
             return fullEvaluate(schedule)
         }
-        val flat = ScheduleFlat.flatten(schedule)
+        val need = schedule.size * t
+        val flat = flatScratch?.takeIf { it.size == need } ?: IntArray(need).also { flatScratch = it }
+        ScheduleFlat.flattenInto(schedule, flat)
         // 適用前盤面へ戻す（native は before + writes）
         var u = 0
         while (u + 2 < undoSnap.size) {

@@ -58,6 +58,16 @@ class G1LocalAnnealer(
 ) {
     private var struct: StructuralMoveFactory? = null
 
+    /**
+     * [メモリ削減] ANNEAL フェーズの native 早期棄却チェックは毎反復（数百万〜数千万回/実行）
+     * 呼ばれるが、盤面の形（S×T）は実行中不変。ScheduleFlat.flatten を毎回新規確保すると
+     * GC 圧迫（→ LMK/OOM クラッシュの一因になり得る）ため、使い回すスクラッチバッファにする。
+     * 前提: G1LocalAnnealer は1インスタンス=1スレッドでしか使われない（MAX_PARALLEL=1、
+     * EngineFacade.optimize の workers.coerceIn(1, ParallelSaCoordinator.MAX_PARALLEL) で
+     * 保証）。将来 MAX_PARALLEL を上げる場合はこのスクラッチをワーカーごとに分離すること。
+     */
+    private val flatScratch = IntArray(problem.S * problem.T)
+
     var lastController: TemperatureController? = null
         private set
 
@@ -99,8 +109,8 @@ class G1LocalAnnealer(
                     var skipKotlin = false
                     val probe = params.nativeProbe
                     if (probe is NativeBridgeProbe && com.magi.app.v6.NativeGate.usable) {
-                        val flat = ScheduleFlat.flatten(session.current)
-                        val d = probe.deltaScore(flat, move.writes)
+                        ScheduleFlat.flattenInto(session.current, flatScratch)
+                        val d = probe.deltaScore(flatScratch, move.writes)
                         if (d != null) {
                             nativeDeltaOk++
                             // hard は C++ packed 同士のみ比較（Checker.report.hard と混同しない）

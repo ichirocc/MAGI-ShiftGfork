@@ -26,9 +26,21 @@ object ScheduleFlat {
         val s = schedule.size
         val t = if (s > 0) schedule[0].size else 0
         val out = IntArray(s * t)
+        flattenInto(schedule, out)
+        return out
+    }
+
+    /**
+     * [flatten] のバッファ再利用版。SA/G1 のホットループ（毎反復呼ばれる）で
+     * IntArray(S*T) を新規確保し続けると GC 圧迫の原因になるため、呼び出し側が
+     * 使い回すスクラッチバッファへ書き込むだけにする。out のサイズは
+     * schedule.size * schedule[0].size 以上であること（呼び出し側の責任）。
+     */
+    fun flattenInto(schedule: Array<IntArray>, out: IntArray) {
+        val s = schedule.size
+        val t = if (s > 0) schedule[0].size else 0
         var k = 0
         for (i in 0 until s) for (j in 0 until t) out[k++] = schedule[i][j]
-        return out
     }
 }
 
