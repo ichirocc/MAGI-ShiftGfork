@@ -56,9 +56,15 @@ fun SearchSessionFull.nativePrefilter(
         TransitionMode.ANNEAL -> 1
         TransitionMode.LAHC -> 2
     }
-    val flat = ScheduleFlat.flatten(current)
+    // [メモリ削減] RSI(SimpleRsi)/G2修復(G2FocusRepair) の主ホットループが
+    // tryTransitionStrictWithOptionalNativeSkip 経由で毎反復ここへ来る。旧実装は
+    // flatten()（新規 IntArray）＋ flat.copyOf()（さらに新規 IntArray）と二重確保していたが、
+    // probe.probe() の書き戻し結果（NativeProbeResult.scheduleFlat）は全呼び出し元
+    // （tryTransitionStrictWithOptionalNativeSkip / tryTransitionWithNativeProbe）で未使用のため
+    // 元の flat を保全する必要が無い。使い回すスクラッチへ書き込み、コピーせずそのまま渡す。
+    ScheduleFlat.flattenInto(current, flatScratch)
     return runCatching {
-        probe.probe(flat.copyOf(), move.writes, modeI, temperature)
+        probe.probe(flatScratch, move.writes, modeI, temperature)
     }.getOrElse { NativeProbeResult(0) }
 }
 

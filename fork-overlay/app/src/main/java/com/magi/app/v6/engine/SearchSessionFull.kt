@@ -41,6 +41,16 @@ class SearchSessionFull(
     private var lastReject: TransitionResult = TransitionResult.Rejected(RejectReason.NOOP)
     private val touchBuf = LongArray(128)
 
+    /**
+     * [メモリ削減] `nativePrefilter`（RSI/G2 修復のホットループから
+     * tryTransitionStrictWithOptionalNativeSkip 経由で毎反復呼ばれる）が盤面を JNI へ渡す際の
+     * 使い回しバッファ。SearchSessionFull はそもそも current/undo/counts/bits を直接ミューテートする
+     * 前提の単一スレッド専用オブジェクト（同時に複数スレッドから使うことは元々想定されていない）
+     * のため、この可変フィールドを追加しても安全性は変わらない。internal = 同一パッケージ外
+     * （nativex サブパッケージ）からも参照するため。
+     */
+    internal val flatScratch = IntArray(problem.S * problem.T)
+
     init {
         if (!ProblemGuards.isRunnable(problem) || !ProblemGuards.scheduleShapeOk(problem, initial)) {
             android.util.Log.e("MAGI", "SearchSessionFull: invalid problem/schedule S=${problem.S} T=${problem.T}")
