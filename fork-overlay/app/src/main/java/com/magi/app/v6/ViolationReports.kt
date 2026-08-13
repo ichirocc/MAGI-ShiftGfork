@@ -14,6 +14,7 @@ object ViolationReports {
         hard: Int,
         soft: Int,
         packedScore: Long,
+        breakdown: Map<String, Int> = emptyMap(),
     ): ViolationReport {
         val h = hard.coerceAtLeast(0)
         val s = soft.coerceAtLeast(0)
@@ -21,7 +22,7 @@ object ViolationReports {
             violations = emptyMap(),
             needViolations = emptyMap(),
             countViolations = emptyMap(),
-            breakdown = emptyMap(),
+            breakdown = breakdown,
             total = h + s,
             hard = h,
             soft = s,
