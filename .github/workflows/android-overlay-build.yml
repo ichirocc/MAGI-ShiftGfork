@@ -3,8 +3,14 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - 'fork-overlay/**'
+      - '.github/workflows/android-overlay-build.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'fork-overlay/**'
+      - '.github/workflows/android-overlay-build.yml'
 permissions:
   contents: read
 concurrency:
