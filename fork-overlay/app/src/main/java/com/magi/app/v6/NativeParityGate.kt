@@ -28,10 +28,26 @@ object NativeParityGate {
             Log.i(TAG, "$label OK hard=${r.kotlinHard} soft=${r.kotlinSoft} nativeUs=${r.nativeUs}")
             return true
         }
+        val sample = buildString {
+            val S = schedule.size.coerceAtMost(3)
+            for (i in 0 until S) {
+                val row = schedule[i]
+                val T = row.size.coerceAtMost(8)
+                append(" s").append(i).append("=[")
+                for (j in 0 until T) {
+                    if (j > 0) append(',')
+                    append(row[j])
+                }
+                if (row.size > T) append(",...")
+                append(']')
+            }
+        }
         val msg =
-            "$label NG C++ hard=${r.nativeHard}/soft=${r.nativeSoft} ≠ Kotlin hard=${r.kotlinHard}/soft=${r.kotlinSoft}"
+            "$label NG C++ hard=${r.nativeHard}/soft=${r.nativeSoft} ≠ Kotlin hard=${r.kotlinHard}/soft=${r.kotlinSoft} sample=$sample"
         lastMismatch = msg
         Log.e(TAG, msg)
+        // 診断用: 不一致時の先頭セルを残す（CI / logcat）
+        Log.e(TAG, "$label scheduleSnapshot S=${schedule.size} T=${schedule.firstOrNull()?.size ?: 0}")
         NativeGate.disable(msg)
         NativeGate.userEnabled = false
         // 棲み分け: 不一致時は数値ホットパスも Kotlin へ全面退化
