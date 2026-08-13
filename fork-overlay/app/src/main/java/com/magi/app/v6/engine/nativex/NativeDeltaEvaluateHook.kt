@@ -1,6 +1,7 @@
 package com.magi.app.v6.engine.nativex
 
 import com.magi.app.v6.ViolationReport
+import com.magi.app.v6.ViolationReports
 import com.magi.app.v6.engine.DeltaEvaluateHook
 import java.util.concurrent.atomic.AtomicLong
 
@@ -58,17 +59,7 @@ class NativeDeltaEvaluateHook(
         deltaHits.incrementAndGet()
         val hard = d.hardAfter.coerceAtLeast(0)
         val soft = d.softAfter.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-        // app-base の ViolationReport に of() は無い（MirrorCore の data class）
-        return ViolationReport(
-            violations = emptyMap(),
-            needViolations = emptyMap(),
-            countViolations = emptyMap(),
-            breakdown = emptyMap(),
-            total = hard + soft,
-            hard = hard,
-            soft = soft,
-            weightedScore = d.afterPacked.toDouble(),
-        )
+        return ViolationReports.fromDeltaPacked(hard, soft, d.afterPacked)
     }
 
     fun statsLine(): String =
