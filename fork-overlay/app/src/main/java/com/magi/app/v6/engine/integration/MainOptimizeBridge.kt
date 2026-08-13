@@ -65,7 +65,7 @@ class MainOptimizeBridge(
                 com.magi.app.v6.NativeGate.usable &&
                 com.magi.app.v6.NativeBridge.available
             ) {
-                val hook = com.magi.app.v6.engine.nativex.NativeDeltaEvaluateHook(probe, evaluate)
+                val hook = com.magi.app.v6.engine.nativex.NativeDeltaEvaluateHook(problem, probe, evaluate)
                 android.util.Log.i("MAGI_DELTA", "hotpath=native-delta-only probe=ok")
                 hook
             } else {
