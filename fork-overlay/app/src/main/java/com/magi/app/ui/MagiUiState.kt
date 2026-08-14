@@ -34,6 +34,10 @@ data class UiState(
     val countViolations: Map<String, String> = emptyMap(),
     // [Set化] セル("i,j")の全違反クラス（重み降順。violationCells は最重1クラス）。タップ全列挙とE7整合に使う。
     val violationCellFamilies: Map<String, List<String>> = emptyMap(),
+    // [/code-review] 回数キー("i,k")/被覆キー("k,j")の全違反クラス（重み降順）。cellFamiliesの兄弟。
+    //   breakdownLocations（内訳→場所タップ）が重い族に隠れた軽い族の場所を取りこぼさないために使う。
+    val countFamilies: Map<String, List<String>> = emptyMap(),
+    val needFamilies: Map<String, List<String>> = emptyMap(),
     // [場所表示] fair/weekly の職員単位の偏り箇所。"weekly"->[[i,dev],..] / "fair"->[[i,k,dev],..]（dev降順）。
     //   内訳パネルの場所表示専用（グリッドには出さない）。表示のみ・スコア不変。
     val distLocations: Map<String, List<List<Int>>> = emptyMap(),
@@ -73,6 +77,8 @@ data class UiState(
     val resultNeedViolations: Map<String, String>? = null,
     val resultCountViolations: Map<String, String>? = null,
     val resultViolationCellFamilies: Map<String, List<String>>? = null,
+    val resultCountFamilies: Map<String, List<String>>? = null,
+    val resultNeedFamilies: Map<String, List<String>>? = null,
     val liveSchedule: List<List<Int>> = emptyList(),      // [DefragLiveView] 計算中の最良盤面（実行中のみ）
     val v6: V6PortReport? = null,
     val constraintsEdited: Boolean = false,
