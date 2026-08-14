@@ -62,6 +62,13 @@ class ParallelSaCoordinator(
         noImproveMs: Long = DEFAULT_NO_IMPROVE_MS,
         /** これ以下の hard は「改善不能 HARD のみ」とみなし停滞切上げを早める */
         provenHardFloor: Int = 0,
+        /**
+         * >0 なら各ワーカーの反復数を時間でなくこの値で打ち切る（G1Params.maxIters と同じ意図の
+         * 「再現テスト用」）。budgetMs は無視されない（deadline/スライスのポーリングは維持したまま、
+         * 累積反復数だけをこの上限で止める）。workers=1 かつ baseSeed 固定なら bit-for-bit 再現になる
+         * （THREE_PILLARS.md「1w=再現、Nw=統計」）。既定 0 = 従来どおり時間駆動。
+         */
+        maxIters: Long = 0L,
     ): ParallelSaResult {
         val n = safeWorkerCount(workers)
         val deadline = System.currentTimeMillis() + budgetMs.coerceAtLeast(1L)
@@ -83,7 +90,7 @@ class ParallelSaCoordinator(
         runCatching { onProgress?.invoke(0L, elite.get().report) }
 
         if (n == 1) {
-            val (iters, rep) = runWorker(0, baseSeed, seedBoard, deadline, stop, shouldStop, elite, sharedIters, lastImproveMs, lastHard)
+            val (iters, rep) = runWorker(0, baseSeed, seedBoard, deadline, stop, shouldStop, elite, sharedIters, lastImproveMs, lastHard, maxIters)
             runCatching { onProgress?.invoke(iters, elite.get().report) }
             val e = elite.get()
             return ParallelSaResult(
@@ -97,7 +104,7 @@ class ParallelSaCoordinator(
             val futures = (0 until n).map { w ->
                 val seed = baseSeed xor (w.toLong() * -0x61c8864680b583ebL)
                 pool.submit(Callable {
-                    runWorker(w, seed, seedBoard, deadline, stop, shouldStop, elite, sharedIters, lastImproveMs, lastHard)
+                    runWorker(w, seed, seedBoard, deadline, stop, shouldStop, elite, sharedIters, lastImproveMs, lastHard, maxIters)
                 })
             }
             var stopReasonLocal = StopReason.DEADLINE
@@ -209,6 +216,7 @@ class ParallelSaCoordinator(
         sharedIters: AtomicLong,
         lastImproveMs: AtomicLong,
         lastHard: java.util.concurrent.atomic.AtomicInteger,
+        maxIters: Long = 0L,
     ): Pair<Long, ViolationReport> {
         return try {
             val rng = Random(seed)
@@ -222,13 +230,20 @@ class ParallelSaCoordinator(
             val g1 = G1LocalAnnealer(problem, session)
             var totalIters = 0L
             while (!stop.get() && !shouldStop() && System.currentTimeMillis() < deadline) {
+                if (maxIters > 0L && totalIters >= maxIters) break
                 val remain = deadline - System.currentTimeMillis()
                 if (remain <= 0L) break
+                // maxIters>0 のときは G1Params.maxIters が budgetMs を無視して反復数だけで
+                // 打ち切るため（G1LocalAnnealer.timeUp 参照）、このスライスで消化してよい残り数を渡す。
+                // 通常1スライスで maxIters 全消化するが、native早期return等で複数スライスに
+                // 分かれても累積が maxIters を超えないよう毎回残数を再計算する。
+                val sliceMaxIters = if (maxIters > 0L) maxIters - totalIters else 0L
                 val iters = g1.run(
                     G1Params(
                         budgetMs = minOf(SLICE_MS, remain),
                         shouldStop = { stop.get() || shouldStop() },
                         nativeProbe = null,
+                        maxIters = sliceMaxIters,
                     ),
                     rng,
                 )
