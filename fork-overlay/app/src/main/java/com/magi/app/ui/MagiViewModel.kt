@@ -1763,6 +1763,8 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             resultNeedViolations = it.needViolations,
             resultCountViolations = it.countViolations,
             resultViolationCellFamilies = it.violationCellFamilies,
+            resultCountFamilies = it.countFamilies,
+            resultNeedFamilies = it.needFamilies,
             message = "編集中の内容を「結果」として確定しました",
         ) }
         logOp("I", "編集中→結果に確定")
@@ -3297,6 +3299,8 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             needViolations = report.needViolations,
             countViolations = report.countViolations,
             violationCellFamilies = report.cellFamilies,
+            countFamilies = report.countFamilies,
+            needFamilies = report.needFamilies,
             distLocations = report.distLocations,
             // [backlog#1] 検査対象が結果(ws6)そのものなら、この report が結果専用マップの最新値。
             //   最適化完了/他案適用/結果→編集複製後の refreshCheck 等、resultSchedule 更新サイトは全て
@@ -3306,6 +3310,8 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             resultNeedViolations = when { resultSchedule == null -> null; resultFresh -> report.needViolations; else -> base.resultNeedViolations },
             resultCountViolations = when { resultSchedule == null -> null; resultFresh -> report.countViolations; else -> base.resultCountViolations },
             resultViolationCellFamilies = when { resultSchedule == null -> null; resultFresh -> report.cellFamilies; else -> base.resultViolationCellFamilies },
+            resultCountFamilies = when { resultSchedule == null -> null; resultFresh -> report.countFamilies; else -> base.resultCountFamilies },
+            resultNeedFamilies = when { resultSchedule == null -> null; resultFresh -> report.needFamilies; else -> base.resultNeedFamilies },
             logs = v6Logs + compressDiagLogs(mappedDiag),
             staffNames = st.staff.map { it.name },
             staffGroupSymbols = groupSymbols.map { toHankakuKigou(it) },
