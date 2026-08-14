@@ -85,6 +85,25 @@ jobs:
         run: |
           set -o pipefail
           gradle :app:assembleDebug --stacktrace 2>&1 | tee build/ci-logs/assembleDebug.log
+      - name: testDebugUnitTest
+        id: testDebugUnitTest
+        working-directory: app-base
+        # [初回ロールアウト] fork-overlay 配下のテスト（ベース magi7ichiro-fork から継承した
+        # 327件超＋新規の ParallelSaCoordinatorDeterminismTest）は、この overlay の組み合わせで
+        # testDebugUnitTest を実際に走らせるのが今回が初めて（他4レーンはどれも実行していない）。
+        # continue-on-error でこのレーンの「必須」判定は今回まだ揺らさず、まず結果を観測する。
+        # green を確認できたら continue-on-error を外して本当のゲートに昇格させること。
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest --stacktrace 2>&1 | tee build/ci-logs/testDebugUnitTest.log
+      - if: steps.testDebugUnitTest.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-overlay-test-results
+          path: app-base/app/build/test-results/testDebugUnitTest/
+          retention-days: 7
       - name: Verify libmagi_native.so
         working-directory: app-base
         run: |

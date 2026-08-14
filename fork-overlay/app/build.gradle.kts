@@ -71,6 +71,18 @@ android {
     }
     packaging { resources { excludes += setOf("/META-INF/{AL2.0,LGPL2.1}") } }
 
+    // [1 worker固定seed回帰テスト] JVM unit tests のクラスパスに載る android.jar は
+    // android.util.Log 等を「呼ぶと RuntimeException」なスタブとして提供する。既存327件超の
+    // テスト（app/src/test 継承分）は Android フレームワークを直接呼ばない設計で問題にならな
+    // かったが、engine/parallel の新規テストは ParallelSaCoordinator.run() 経由で
+    // android.util.Log.i(...) を実際に踏む。isReturnDefaultValues=true でスタブを「例外を投げず
+    // 既定値を返す」に切替え、ログ呼び出し自体は無視して純粋にロジックだけ検証する。
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
+
     // This release variant is a personal-test APK signed with the debug key (see buildTypes.release),
     // not a Play-store build. `lintVitalRelease` aborts the APK on any *fatal* lint issue, which only
     // blocks the test build without adding value here. Don't fail the build on lint; still emit the
